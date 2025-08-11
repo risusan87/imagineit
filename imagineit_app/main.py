@@ -57,7 +57,7 @@ def main():
         # Caddy will automatically find and use the 'Caddyfile' in the same directory.
         # Ensure the 'caddy' executable is in your system's PATH.
         print(f"Starting Caddy reverse proxy on port {CADDY_PORT}...")
-        caddy_proc = subprocess.Popen(['caddy', 'run'])
+        caddy_proc = subprocess.Popen(['./caddy', 'run'])
         processes.append(caddy_proc)
         time.sleep(2) # Give Caddy a moment to start
 
