@@ -38,7 +38,6 @@ def main():
     then starts a single ngrok tunnel pointing to Caddy.
     """
     # --- Configuration ---
-    CADDY_PORT = 9000
     BACKEND_PORT = 8000
     FRONTEND_DIR = "imagineit_app/static" # The directory of your Vite app
 
@@ -56,10 +55,10 @@ def main():
         # --- Step A: Start Caddy Reverse Proxy ---
         # Caddy will automatically find and use the 'Caddyfile' in the same directory.
         # Ensure the 'caddy' executable is in your system's PATH.
-        print(f"Starting Caddy reverse proxy on port {CADDY_PORT}...")
-        caddy_proc = subprocess.Popen(['./caddy', 'run'])
-        processes.append(caddy_proc)
-        time.sleep(2) # Give Caddy a moment to start
+        # print(f"Starting Caddy reverse proxy on port {CADDY_PORT}...")
+        # caddy_proc = subprocess.Popen(['./caddy', 'run'])
+        # processes.append(caddy_proc)
+        # time.sleep(2) # Give Caddy a moment to start
 
         # --- Step B: Start FastAPI Backend ---
         backend_command = f"uvicorn imagineit_app.main:app --host 127.0.0.1 --port {BACKEND_PORT}"
@@ -75,7 +74,7 @@ def main():
         time.sleep(5) # Give Vite a few seconds to compile
 
         # --- Step D: Start the single ngrok tunnel pointing to Caddy ---
-        public_url = ngrok.connect(CADDY_PORT, "http")
+        public_url = ngrok.connect(9000, "http")
         print(f"\n🎉 Your application is live!")
         print(f"🔗 Public URL: {public_url}")
         print("\nPress Ctrl+C in this terminal to stop all services.")
