@@ -14,6 +14,7 @@ dependencies = [
     "transformers",
     "torch",
     "pyngrok",
+    "python-dotenv",
 ]
 
 [project.scripts]

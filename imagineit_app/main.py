@@ -10,19 +10,6 @@ from pyngrok import ngrok
 
 app = FastAPI()
 
-origins = [
-    "http://localhost:5173",  # Your React app's development server
-]
-print(f'Allowed origins: {origins}')
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,       # Allow specific origins
-    allow_origin_regex=r"https?:\/\/([a-z0-9\-]+\.)?ngrok-free\.app",
-    allow_credentials=True,      # Allow cookies to be sent
-    allow_methods=["*"],         # Allow all methods (GET, POST, etc.)
-    allow_headers=["*"],         # Allow all headers
-)
-
 @app.get("/api/v1/status")
 def read_root():
     return {"status": "active"}
