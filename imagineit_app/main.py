@@ -34,62 +34,66 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
 
 def main():
     """
-    Launches the frontend and backend development servers in parallel.
-    Handles Ctrl+C to gracefully shut down both servers.
+    Launches Caddy, Backend, and Frontend as background processes,
+    then starts a single ngrok tunnel pointing to Caddy.
     """
-
-    FRONTEND_PORT = 5173
+    # --- Configuration ---
+    CADDY_PORT = 9000
     BACKEND_PORT = 8000
+    FRONTEND_DIR = "imagineit_app/static" # The directory of your Vite app
 
-    ngrok_token = os.environ.get("NGROK_AUTHTOKEN")
-    if ngrok_token:
-        ngrok.set_auth_token(ngrok_token)
-    else:
-        print("No ngrok token found. Please set the NGROK_AUTHTOKEN environment variable.")
+    # --- Get ngrok token from environment ---
+    NGROK_TOKEN = os.environ.get('NGROK_AUTHTOKEN')
+    if not NGROK_TOKEN:
+        print("❌ Error: NGROK_AUTHTOKEN not found in environment.")
         sys.exit(1)
-    print(f"Starting ngrok tunnel for frontend on port {FRONTEND_PORT}...")
+    ngrok.set_auth_token(NGROK_TOKEN)
+
+    processes = []
     try:
-        # This creates the tunnel and returns a tunnel object
-        frontend_tunnel = ngrok.connect(FRONTEND_PORT, "http")
-        frontend_public_url = frontend_tunnel.public_url
-        print(f"Frontend public URL: {frontend_public_url}")
-    except Exception as e:
-        print(f"Error starting ngrok: {e}")
-        sys.exit(1)
+        print("🚀 Starting all services...")
 
-    # Command to run the backend (uvicorn)
-    backend_command = f"uvicorn imagineit_app.main:app --reload --host localhost --port {BACKEND_PORT}"
+        # --- Step A: Start Caddy Reverse Proxy ---
+        # Caddy will automatically find and use the 'Caddyfile' in the same directory.
+        # Ensure the 'caddy' executable is in your system's PATH.
+        print(f"Starting Caddy reverse proxy on port {CADDY_PORT}...")
+        caddy_proc = subprocess.Popen(['caddy', 'run'])
+        processes.append(caddy_proc)
+        time.sleep(2) # Give Caddy a moment to start
 
-    # Command to run the frontend (npm start)
-    # We need to specify the working directory for this command.
-    frontend_command = "npm run dev"
-    frontend_dir = "imagineit_app/static"
+        # --- Step B: Start FastAPI Backend ---
+        backend_command = f"uvicorn imagineit_app.main:app --host 127.0.0.1 --port {BACKEND_PORT}"
+        backend_proc = subprocess.Popen(shlex.split(backend_command))
+        processes.append(backend_proc)
+        print("✅ FastAPI backend server started.")
 
-    print("Starting backend server...")
-    # Use shlex.split to handle command-line arguments correctly
-    backend_proc = subprocess.Popen(shlex.split(backend_command))
+        # --- Step C: Start Vite Frontend ---
+        frontend_command = "npm run dev"
+        frontend_proc = subprocess.Popen(shlex.split(frontend_command), cwd=FRONTEND_DIR)
+        processes.append(frontend_proc)
+        print("✅ Vite frontend server started.")
+        time.sleep(5) # Give Vite a few seconds to compile
 
-    print("Starting frontend server...")
-    # Use cwd to set the working directory for the npm command
-    frontend_proc = subprocess.Popen(shlex.split(frontend_command), cwd=frontend_dir)
+        # --- Step D: Start the single ngrok tunnel pointing to Caddy ---
+        public_url = ngrok.connect(CADDY_PORT, "http")
+        print(f"\n🎉 Your application is live!")
+        print(f"🔗 Public URL: {public_url}")
+        print("\nPress Ctrl+C in this terminal to stop all services.")
 
-    print("\nDevelopment servers are running.")
-    print(f"Access your site at the public URL: {frontend_public_url}")
-    print("\nPress Ctrl+C to stop both servers.")
-
-    try:
-        # Keep the main script alive
+        # Keep the script running
         while True:
             time.sleep(1)
+
     except KeyboardInterrupt:
-        print("\nShutting down all services...")
-        # Terminate processes in reverse order
-        frontend_proc.terminate()
-        backend_proc.terminate()
-        ngrok.disconnect(frontend_public_url)
-        print("All services have been shut down.")
-        sys.exit(0)
+        print("\nSIGINT received, shutting down all services...")
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {e}")
+    finally:
+        for proc in reversed(processes):
+            print(f"Terminating process {proc.pid}...")
+            proc.terminate() # Terminate all background processes
+        ngrok.kill() # Kill all ngrok tunnels
+        print("✅ All services have been shut down.")
 
 if __name__ == "__main__":
     main()
-
