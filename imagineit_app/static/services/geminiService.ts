@@ -1,6 +1,4 @@
 
-const API_BASE_URL = 'http://localhost:8000';
-
 /**
  * Generates an image by making a GET request to the backend API.
  * @param prompt The main prompt.
@@ -39,7 +37,7 @@ export const generateImage = async (
         params.append('seed', String(seed));
     }
 
-    const url = `${API_BASE_URL}/api/v1/imagine?${params.toString()}`;
+    const url = `/api/v1/imagine?${params.toString()}`;
 
     try {
         const response = await fetch(url);
@@ -68,7 +66,7 @@ export const generateImage = async (
     } catch (error) {
         console.error("Image generation failed:", error);
         if (error instanceof TypeError) {
-             throw new Error(`Backend communication failed. Is the server running at ${API_BASE_URL}?` + error.message);
+             throw new Error(`Backend communication failed. Is the server running at host?` + error.message);
         }
         if (error instanceof Error) {
             throw error; // Re-throw the specific error from the API response
