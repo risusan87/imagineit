@@ -45,8 +45,6 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
         "message": "Request received. Processing will start shortly.",
     }
 
-
-
 def main():
     """
     Launches the frontend and backend development servers in parallel.
@@ -56,9 +54,12 @@ def main():
     FRONTEND_PORT = 5173
     BACKEND_PORT = 8000
 
-    ngrok_token = os.environ.get("TOKEN")
+    ngrok_token = os.environ.get("NGROK_AUTHTOKEN")
     if ngrok_token:
         ngrok.set_auth_token(ngrok_token)
+    else:
+        print("No ngrok token found. Please set the NGROK_AUTHTOKEN environment variable.")
+        sys.exit(1)
     print(f"Starting ngrok tunnel for frontend on port {FRONTEND_PORT}...")
     try:
         # This creates the tunnel and returns a tunnel object
