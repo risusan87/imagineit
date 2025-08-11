@@ -1,21 +1,23 @@
 import subprocess
 import shlex
+import os
 import time
 import sys
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pyngrok import ngrok
-
 
 app = FastAPI()
 
 origins = [
     "http://localhost:5173",  # Your React app's development server
-    "https://www.your-production-app.com", # Your deployed frontend domain
 ]
+print(f'Allowed origins: {origins}')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,       # Allow specific origins
+    allow_origin_regex=r"https?:\/\/([a-z0-9\-]+\.)?ngrok-free\.app",
     allow_credentials=True,      # Allow cookies to be sent
     allow_methods=["*"],         # Allow all methods (GET, POST, etc.)
     allow_headers=["*"],         # Allow all headers
@@ -50,8 +52,25 @@ def main():
     Launches the frontend and backend development servers in parallel.
     Handles Ctrl+C to gracefully shut down both servers.
     """
+
+    FRONTEND_PORT = 5173
+    BACKEND_PORT = 8000
+
+    ngrok_token = os.environ.get("TOKEN")
+    if ngrok_token:
+        ngrok.set_auth_token(ngrok_token)
+    print(f"Starting ngrok tunnel for frontend on port {FRONTEND_PORT}...")
+    try:
+        # This creates the tunnel and returns a tunnel object
+        frontend_tunnel = ngrok.connect(FRONTEND_PORT, "http")
+        frontend_public_url = frontend_tunnel.public_url
+        print(f"Frontend public URL: {frontend_public_url}")
+    except Exception as e:
+        print(f"Error starting ngrok: {e}")
+        sys.exit(1)
+
     # Command to run the backend (uvicorn)
-    backend_command = "uvicorn imagineit_app.main:app --reload --host 127.0.0.1 --port 8000"
+    backend_command = f"uvicorn imagineit_app.main:app --reload --host localhost --port {BACKEND_PORT}"
 
     # Command to run the frontend (npm start)
     # We need to specify the working directory for this command.
@@ -67,20 +86,20 @@ def main():
     frontend_proc = subprocess.Popen(shlex.split(frontend_command), cwd=frontend_dir)
 
     print("\nDevelopment servers are running.")
-    print(f"Backend: http://127.0.0.1:8000")
-    print(f"Frontend: http://localhost:5173")
+    print(f"Access your site at the public URL: {frontend_public_url}")
     print("\nPress Ctrl+C to stop both servers.")
 
     try:
-        # Wait for processes to complete. They won't, unless they crash.
-        backend_proc.wait()
-        frontend_proc.wait()
+        # Keep the main script alive
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
-        print("\nShutting down servers...")
-        # Gracefully terminate both processes
-        backend_proc.terminate()
+        print("\nShutting down all services...")
+        # Terminate processes in reverse order
         frontend_proc.terminate()
-        print("Servers have been shut down.")
+        backend_proc.terminate()
+        ngrok.disconnect(frontend_public_url)
+        print("All services have been shut down.")
         sys.exit(0)
 
 if __name__ == "__main__":

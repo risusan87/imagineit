@@ -68,7 +68,7 @@ export const generateImage = async (
     } catch (error) {
         console.error("Image generation failed:", error);
         if (error instanceof TypeError) {
-             throw new Error(`Backend communication failed. Is the server running at ${API_BASE_URL}?`);
+             throw new Error(`Backend communication failed. Is the server running at ${API_BASE_URL}?` + error.message);
         }
         if (error instanceof Error) {
             throw error; // Re-throw the specific error from the API response
