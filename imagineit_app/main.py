@@ -8,8 +8,6 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from pyngrok import ngrok
 
-from imagineit_app.inference import img_inference
-
 app = FastAPI()
 
 @app.get("/api/v1/status")
@@ -21,6 +19,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
     """
     endpoint for image inference
     """
+    from imagineit_app.inference import img_inference
     image_bytes = img_inference(
         prompt=prompt,
         negative_prompt=negative_prompt,
