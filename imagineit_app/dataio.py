@@ -52,6 +52,7 @@ def save_img(image_data: bytes, seed: int, prompt: str, negative_prompt: str, wi
     metadata_df.to_csv(f"{IMG_DIR}/metadata.csv", index=False)
     image_path = f"{IMG_DIR}/{hex_digest}.png"
     to_img(image_data, image_path)
+    return hex_digest
 
 def load_img_metadata():
     if not os.path.exists(f"{IMG_DIR}/metadata.csv"):

@@ -16,6 +16,10 @@ interface ImageControlsProps {
     setSteps: (steps: number) => void;
     guidanceScale: number;
     setGuidanceScale: (scale: number) => void;
+    batchSize: number;
+    setBatchSize: (size: number) => void;
+    inferenceCount: number;
+    setInferenceCount: (count: number) => void;
     isLoading: boolean;
     onGenerate: () => void;
 }
@@ -28,6 +32,8 @@ const ImageControls: React.FC<ImageControlsProps> = ({
     seed, setSeed, 
     steps, setSteps,
     guidanceScale, setGuidanceScale,
+    batchSize, setBatchSize,
+    inferenceCount, setInferenceCount,
     isLoading, onGenerate 
 }) => {
     
@@ -112,6 +118,38 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                                 min={MIN_DIMENSION}
                                 max={MAX_DIMENSION}
                                 placeholder="Height"
+                            />
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Generation Settings
+                    </label>
+                    <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                             <label htmlFor="inference-count" className="text-xs text-gray-400 mb-1 block">Inference Count</label>
+                            <input
+                                id="inference-count"
+                                type="number"
+                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                value={inferenceCount}
+                                onChange={(e) => setInferenceCount(Math.max(1, Number(e.target.value)))}
+                                disabled={isLoading}
+                                min="1"
+                            />
+                        </div>
+                        <div className="flex-1">
+                             <label htmlFor="batch-size" className="text-xs text-gray-400 mb-1 block">Batch Size</label>
+                            <input
+                                id="batch-size"
+                                type="number"
+                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                value={batchSize}
+                                onChange={(e) => setBatchSize(Math.max(1, Number(e.target.value)))}
+                                disabled={isLoading}
+                                min="1"
                             />
                         </div>
                     </div>

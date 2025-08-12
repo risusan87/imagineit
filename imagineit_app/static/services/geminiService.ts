@@ -7,7 +7,9 @@
  * @param steps The number of sampling steps.
  * @param guidanceScale The guidance scale.
  * @param seed The seed for reproducibility.
- * @returns A URL for the generated image blob.
+ * @param batchSize The number of images to generate in parallel on the backend.
+ * @param inferenceCount The total number of images to generate.
+ * @returns An array of URLs for the generated image blobs.
  * @throws An error if the request fails or the response is not a valid image.
  */
 export const generateImage = async (
@@ -17,8 +19,10 @@ export const generateImage = async (
     height: number,
     steps: number,
     guidanceScale: number,
-    seed: number | null
-): Promise<string> => {
+    seed: number | null,
+    batchSize: number,
+    inferenceCount: number
+): Promise<string[]> => {
     if (!prompt.trim()) {
         throw new Error("Prompt cannot be empty.");
     }
@@ -30,6 +34,8 @@ export const generateImage = async (
         height: String(height),
         steps: String(steps),
         guidance_scale: String(guidanceScale),
+        batch_size: String(batchSize),
+        inference_size: String(inferenceCount),
     });
 
     if (seed !== null && seed >= 0) {
@@ -51,14 +57,23 @@ export const generateImage = async (
             }
             throw new Error(errorMessage);
         }
+        
+        const imageHashes = await response.json();
 
-        const imageBlob = await response.blob();
-
-        if (!imageBlob.type.startsWith('image/')) {
-            throw new Error("Backend did not return a valid image. Please check the API response.");
+        if (!Array.isArray(imageHashes)) {
+            throw new Error("Backend did not return a valid list of images. Please check the API response.");
         }
         
-        return URL.createObjectURL(imageBlob);
+        if (imageHashes.length === 0) {
+            return [];
+        }
+
+        // Fetch all images concurrently from their hashes
+        const imageUrls = await Promise.all(
+            imageHashes.map(hash => fetchImageById(hash))
+        );
+        
+        return imageUrls;
 
     } catch (error) {
         console.error("Image generation failed:", error);

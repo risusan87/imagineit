@@ -46,22 +46,27 @@ def get_image(hash: str):
     return Response(content=image, media_type="image/png")
 
 @app.get("/api/v1/imagine")
-def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: int = 1024, num_inference_steps: int = 28, guidance_scale: float = 7.5, seed: int = None):
+def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: int = 1024, num_inference_steps: int = 28, guidance_scale: float = 7.5, seed: int = None, batch_size: int = 1, inference_count: int = 1):
     """
     endpoint for image inference
     """
     from imagineit_app.inference import img_inference
-    image_bytes = img_inference(
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        width=width,
-        height=height,
-        steps=num_inference_steps,
-        guidance_scale=guidance_scale,
-        seed=seed
-    )
-    save_img(image_bytes, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
-    return Response(content=image_bytes, media_type="image/png")
+    image_hashes = []
+    for _ in range(inference_count):
+        image_bytes = img_inference(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            width=width,
+            height=height,
+            steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            seed=seed,
+            batch_size=batch_size,
+        )
+        for img in image_bytes:
+            hash = save_img(img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
+            image_hashes.append(hash)
+    return Response(content=image_hashes, media_type="application/json")
 
 def main():
     """

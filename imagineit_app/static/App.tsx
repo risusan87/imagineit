@@ -18,7 +18,9 @@ const App: React.FC = () => {
     const [seed, setSeed] = useState<number | null>(null);
     const [steps, setSteps] = useState<number>(DEFAULT_STEPS);
     const [guidanceScale, setGuidanceScale] = useState<number>(DEFAULT_GUIDANCE);
-    const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+    const [batchSize, setBatchSize] = useState<number>(1);
+    const [inferenceCount, setInferenceCount] = useState<number>(1);
+    const [generatedImages, setGeneratedImages] = useState<string[] | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -30,19 +32,21 @@ const App: React.FC = () => {
 
         setIsLoading(true);
         setError(null);
-        setGeneratedImage(null);
+        setGeneratedImages(null);
 
         try {
-            const imageUrl = await generateImage(
+            const imageUrls = await generateImage(
                 prompt,
                 negativePrompt,
                 width,
                 height,
                 steps,
                 guidanceScale,
-                seed
+                seed,
+                batchSize,
+                inferenceCount
             );
-            setGeneratedImage(imageUrl);
+            setGeneratedImages(imageUrls);
         } catch (err) {
             if (err instanceof Error) {
                 setError(err.message);
@@ -52,7 +56,7 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [isLoading, prompt, negativePrompt, width, height, steps, guidanceScale, seed]);
+    }, [isLoading, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount]);
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 font-sans flex flex-col items-center p-4 sm:p-6 lg:p-8">
@@ -78,13 +82,17 @@ const App: React.FC = () => {
                                     setSteps={setSteps}
                                     guidanceScale={guidanceScale}
                                     setGuidanceScale={setGuidanceScale}
+                                    batchSize={batchSize}
+                                    setBatchSize={setBatchSize}
+                                    inferenceCount={inferenceCount}
+                                    setInferenceCount={setInferenceCount}
                                     isLoading={isLoading}
                                     onGenerate={handleGenerate}
                                 />
                             </div>
                             <div className="w-full lg:w-2/3 flex-1">
                                 <ImageDisplay
-                                    generatedImage={generatedImage}
+                                    generatedImages={generatedImages}
                                     isLoading={isLoading}
                                     error={error}
                                     prompt={prompt}
