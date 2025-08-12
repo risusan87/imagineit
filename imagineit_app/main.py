@@ -16,7 +16,7 @@ def read_root():
     return {"status": "active"}
 
 @app.get("/api/v1/imghashlist")
-def get_unlabeled_image(include_filter_prompt: str, include_filter_negative_prompt: str, exclude_filter_prompt: str, exclude_filter_negative_prompt: str, labeled: bool):
+def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative_prompt: str=None, exclude_filter_prompt: str=None, exclude_filter_negative_prompt: str=None, labeled: bool=None):
     """
     Get a list of unlabeled images with optional filtering by prompt and negative prompt
     """
