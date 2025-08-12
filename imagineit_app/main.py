@@ -33,7 +33,7 @@ def get_unlabeled_image(include_filter_prompt: str, include_filter_negative_prom
         metadata_df = metadata_df[~metadata_df['negative_prompt'].str.split(', ').apply(lambda x: any(item in x for item in exclude_filter_negative_prompt.split(', ')))]
     if labeled is not None:
         metadata_df = metadata_df[metadata_df['labeled'] == labeled]
-    return metadata_df
+    return metadata_df["hash"].tolist()
 
 @app.get("/api/v1/image/{hash}")
 def get_image(hash: str):
