@@ -93,7 +93,7 @@ export const fetchImageHashes = async (filters: ImageHashFilters): Promise<strin
     if (filters.exclude_filter_negative_prompt) params.append('exclude_filter_negative_prompt', filters.exclude_filter_negative_prompt);
     params.append('labeled', String(filters.labeled));
 
-    const url = `/api/v1/imghashlist/?${params.toString()}`;
+    const url = `/api/v1/imghashlist?${params.toString()}`;
 
     try {
         const response = await fetch(url);
@@ -145,7 +145,7 @@ export const fetchImageById = async (id: string): Promise<string> => {
  * @param negativePrompt The negative label prompt.
  */
 export const submitLabel = async (id: string, prompt: string, negativePrompt: string): Promise<void> => {
-    const url = `/api/v1/label/`;
+    const url = `/api/v1/label`;
     try {
         const response = await fetch(url, {
             method: 'POST',
