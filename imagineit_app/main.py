@@ -5,8 +5,10 @@ import time
 import sys
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pyngrok import ngrok
+
+from imagineit_app.inference import img_inference
 
 app = FastAPI()
 
@@ -19,18 +21,16 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
     """
     endpoint for image inference
     """
-
-    # for now, acknowledge the request
-    print(f"Received request with prompt: {prompt}")
-    print(f"Negative prompt: {negative_prompt}")
-    print(f"Width: {width}, Height: {height}")
-    print(f"Inference steps: {num_inference_steps}, Guidance scale: {guidance_scale}")
-    print(f"Seed: {seed}")
-
-    return {
-        "status": "success",
-        "message": "Request received. Processing will start shortly.",
-    }
+    image_bytes = img_inference(
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        width=width,
+        height=height,
+        steps=num_inference_steps,
+        guidance_scale=guidance_scale,
+        seed=seed
+    )
+    return Response(content=image_bytes, media_type="image/png")
 
 def main():
     """
