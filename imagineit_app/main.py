@@ -7,6 +7,7 @@ import sys
 from fastapi import FastAPI
 from fastapi.responses import Response
 from pyngrok import ngrok
+from dataio import save_img
 
 app = FastAPI()
 
@@ -29,6 +30,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
         guidance_scale=guidance_scale,
         seed=seed
     )
+    save_img(image_bytes, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
     return Response(content=image_bytes, media_type="image/png")
 
 def main():
