@@ -7,7 +7,7 @@ import sys
 from fastapi import FastAPI
 from fastapi.responses import Response
 from pyngrok import ngrok
-from dataio import save_img
+from imagineit_app.dataio import save_img
 
 app = FastAPI()
 
