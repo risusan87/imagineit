@@ -1,4 +1,3 @@
-
 /**
  * Generates an image by making a GET request to the backend API.
  * @param prompt The main prompt.
@@ -73,34 +72,38 @@ export const generateImage = async (
     }
 };
 
+interface ImageHashFilters {
+    include_filter_prompt: string;
+    include_filter_negative_prompt: string;
+    exclude_filter_prompt: string;
+    exclude_filter_negative_prompt: string;
+    labeled: boolean;
+}
 
 /**
- * Fetches an unlabeled image from the backend.
- * @param id The ID of the image to fetch.
- * @returns An object with the image URL and ID, or null if no image is found.
+ * Fetches a list of image hashes based on filter criteria.
+ * @param filters The filter parameters.
+ * @returns A promise that resolves to an array of image hashes.
  */
-export const fetchUnlabeledImage = async (id: number): Promise<{ url: string; id: number } | null> => {
-    const url = `/api/v1/unlabeled/${id}`;
+export const fetchImageHashes = async (filters: ImageHashFilters): Promise<string[]> => {
+    const params = new URLSearchParams();
+    if (filters.include_filter_prompt) params.append('include_filter_prompt', filters.include_filter_prompt);
+    if (filters.include_filter_negative_prompt) params.append('include_filter_negative_prompt', filters.include_filter_negative_prompt);
+    if (filters.exclude_filter_prompt) params.append('exclude_filter_prompt', filters.exclude_filter_prompt);
+    if (filters.exclude_filter_negative_prompt) params.append('exclude_filter_negative_prompt', filters.exclude_filter_negative_prompt);
+    params.append('labeled', String(filters.labeled));
+
+    const url = `/api/v1/imghashlist/?${params.toString()}`;
+
     try {
         const response = await fetch(url);
-
-        if (response.status === 404) {
-            return null; // No more images
-        }
-
         if (!response.ok) {
-            throw new Error(`Failed to fetch image with status ${response.status}`);
+            throw new Error(`Failed to fetch image list with status ${response.status}`);
         }
-
-        const imageBlob = await response.blob();
-        if (!imageBlob.type.startsWith('image/')) {
-            throw new Error("API did not return a valid image.");
-        }
-
-        return { url: URL.createObjectURL(imageBlob), id };
-
+        const data = await response.json();
+        return data as string[];
     } catch (error) {
-        console.error("Fetch unlabeled image failed:", error);
+        console.error("Fetch image hashes failed:", error);
         if (error instanceof TypeError) {
              throw new Error(`Backend communication failed. Is the server running?`);
         }
@@ -109,12 +112,39 @@ export const fetchUnlabeledImage = async (id: number): Promise<{ url: string; id
 };
 
 /**
+ * Fetches a single image by its hash ID.
+ * @param id The hash ID of the image.
+ * @returns A promise that resolves to a blob URL of the image.
+ */
+export const fetchImageById = async (id: string): Promise<string> => {
+    const url = `/api/v1/image/${id}`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch image with status ${response.status}`);
+        }
+        const imageBlob = await response.blob();
+        if (!imageBlob.type.startsWith('image/')) {
+            throw new Error("API did not return a valid image.");
+        }
+        return URL.createObjectURL(imageBlob);
+    } catch (error) {
+        console.error("Fetch image by ID failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        throw error;
+    }
+};
+
+
+/**
  * Submits a label for an image to the backend.
  * @param id The ID of the image being labeled.
  * @param prompt The positive label prompt.
  * @param negativePrompt The negative label prompt.
  */
-export const submitLabel = async (id: number, prompt: string, negativePrompt: string): Promise<void> => {
+export const submitLabel = async (id: string, prompt: string, negativePrompt: string): Promise<void> => {
     const url = `/api/v1/label/`;
     try {
         const response = await fetch(url, {

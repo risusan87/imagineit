@@ -7,13 +7,43 @@ import sys
 from fastapi import FastAPI
 from fastapi.responses import Response
 from pyngrok import ngrok
-from imagineit_app.dataio import save_img
+from imagineit_app.dataio import save_img, load_img_metadata, load_img
 
 app = FastAPI()
 
 @app.get("/api/v1/status")
 def read_root():
     return {"status": "active"}
+
+@app.get("/api/v1/imghashlist")
+def get_unlabeled_image(include_filter_prompt: str, include_filter_negative_prompt: str, exclude_filter_prompt: str, exclude_filter_negative_prompt: str, labeled: bool):
+    """
+    Get a list of unlabeled images with optional filtering by prompt and negative prompt
+    """
+    metadata_df = load_img_metadata()
+    if metadata_df is None:
+        return {"error": "No images found."}
+    if include_filter_prompt:
+        metadata_df = metadata_df[metadata_df['prompt'].str.split(', ').apply(lambda x: any(item in x for item in include_filter_prompt.split(', ')))]
+    if include_filter_negative_prompt:
+        metadata_df = metadata_df[metadata_df['negative_prompt'].str.split(', ').apply(lambda x: any(item in x for item in include_filter_negative_prompt.split(', ')))]
+    if exclude_filter_prompt:
+        metadata_df = metadata_df[~metadata_df['prompt'].str.split(', ').apply(lambda x: any(item in x for item in exclude_filter_prompt.split(', ')))]
+    if exclude_filter_negative_prompt:
+        metadata_df = metadata_df[~metadata_df['negative_prompt'].str.split(', ').apply(lambda x: any(item in x for item in exclude_filter_negative_prompt.split(', ')))]
+    if labeled is not None:
+        metadata_df = metadata_df[metadata_df['labeled'] == labeled]
+    return metadata_df
+
+@app.get("/api/v1/image/{hash}")
+def get_image(hash: str):
+    """
+    Get an image by its hash
+    """
+    image = load_img(hash)
+    if image is None:
+        return {"error": "Image not found."}
+    return Response(content=image, media_type="image/png")
 
 @app.get("/api/v1/imagine")
 def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: int = 1024, num_inference_steps: int = 28, guidance_scale: float = 7.5, seed: int = None):
