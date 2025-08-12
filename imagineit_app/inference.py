@@ -10,7 +10,7 @@ pipe = StableDiffusionXLPipeline.from_pretrained( # Use the XL class
     base_model_id,
     torch_dtype=torch.float16 if device == "cuda" else torch.float32,
 )
-pipe.to(device)
+pipe.enable_cpu_offload()
 
 def img_inference(prompt: str, steps: int=28, guidance_scale: float=5.0, negative_prompt: str = "", width: int = 1024, height: int = 1024, seed: int=42):
     seed_generator = torch.Generator(device=device)
