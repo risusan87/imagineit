@@ -45,7 +45,6 @@ export const generateImage = async (
         if (!response.ok) {
             let errorMessage = `API request failed with status ${response.status}`;
             try {
-                // Try to parse a more specific error message from the backend
                 const errorData = await response.json();
                 errorMessage = errorData.detail || errorMessage;
             } catch (e) {
@@ -60,17 +59,91 @@ export const generateImage = async (
             throw new Error("Backend did not return a valid image. Please check the API response.");
         }
         
-        // Create a local URL for the received image data
         return URL.createObjectURL(imageBlob);
 
     } catch (error) {
         console.error("Image generation failed:", error);
         if (error instanceof TypeError) {
-             throw new Error(`Backend communication failed. Is the server running at host?` + error.message);
+             throw new Error(`Backend communication failed. Is the server running?`);
         }
         if (error instanceof Error) {
-            throw error; // Re-throw the specific error from the API response
+            throw error;
         }
         throw new Error("An unknown error occurred during image generation.");
+    }
+};
+
+
+/**
+ * Fetches an unlabeled image from the backend.
+ * @param id The ID of the image to fetch.
+ * @returns An object with the image URL and ID, or null if no image is found.
+ */
+export const fetchUnlabeledImage = async (id: number): Promise<{ url: string; id: number } | null> => {
+    const url = `/api/v1/unlabeled/${id}`;
+    try {
+        const response = await fetch(url);
+
+        if (response.status === 404) {
+            return null; // No more images
+        }
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch image with status ${response.status}`);
+        }
+
+        const imageBlob = await response.blob();
+        if (!imageBlob.type.startsWith('image/')) {
+            throw new Error("API did not return a valid image.");
+        }
+
+        return { url: URL.createObjectURL(imageBlob), id };
+
+    } catch (error) {
+        console.error("Fetch unlabeled image failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        throw error;
+    }
+};
+
+/**
+ * Submits a label for an image to the backend.
+ * @param id The ID of the image being labeled.
+ * @param prompt The positive label prompt.
+ * @param negativePrompt The negative label prompt.
+ */
+export const submitLabel = async (id: number, prompt: string, negativePrompt: string): Promise<void> => {
+    const url = `/api/v1/label/`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                id,
+                prompt,
+                negative_prompt: negativePrompt
+            }),
+        });
+
+        if (!response.ok) {
+            let errorMessage = `API request failed with status ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.detail || errorMessage;
+            } catch (e) {
+                // Ignore if response body is not JSON or empty
+            }
+            throw new Error(errorMessage);
+        }
+    } catch (error) {
+        console.error("Submit label failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        throw error;
     }
 };
