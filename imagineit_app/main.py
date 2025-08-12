@@ -66,7 +66,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
         for img in image_bytes:
             hash = save_img(img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
             image_hashes.append(hash)
-    return Response(content=image_hashes, media_type="application/json")
+    return image_hashes
 
 def main():
     """
