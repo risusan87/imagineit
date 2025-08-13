@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
       },
 
       server: {
-        allowedHosts: ['.ngrok-free.app'],
+        allowedHosts: ['.share.zrok.io'],
         port: 5173, 
       },
 

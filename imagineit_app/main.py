@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from pyngrok import ngrok
 from imagineit_app.dataio import save_img, load_img_metadata, load_img
+from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
 
 app = FastAPI()
 
@@ -85,6 +86,14 @@ def main():
     #     sys.exit(1)
     # ngrok.set_auth_token(NGROK_TOKEN)
 
+    # --- Get zrok token from environment ---
+    ZROK_TOKEN = os.environ.get('ZROK_AUTHTOKEN')
+    if not ZROK_TOKEN:
+        print("❌ Error: ZROK_AUTHTOKEN not found in environment.")
+        sys.exit(1)
+    zrok_enable(ZROK_TOKEN)
+    
+
     processes = []
     try:
         print("🚀 Starting all services...")
@@ -109,6 +118,10 @@ def main():
         processes.append(frontend_proc)
         print("✅ Vite frontend server started.")
 
+        # Zrok tunneling
+        time.sleep(5) # Wait for services to be fully up before starting tunnel
+        zrok, public_url = zrok_share(f'http://localhost:{CADDY_PORT}')
+        print(f"Done! You can access web UI at: {public_url}")
         print("\nPress Ctrl+C in this terminal to stop all services.")
 
         # Keep the script running
@@ -124,6 +137,8 @@ def main():
             print(f"Terminating process {proc.pid}...")
             proc.terminate() # Terminate all background processes
         # ngrok.kill() # Kill all ngrok tunnels
+        if zrok is not None:
+            zrok.terminate()
         print("✅ All services have been shut down.")
 
 if __name__ == "__main__":
