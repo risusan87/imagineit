@@ -21,7 +21,6 @@ const LabeledViewPlaceholder: React.FC<{ message: string; subMessage?: string; }
     </div>
 );
 
-
 const LabelingView: React.FC = () => {
     const [filters, setFilters] = useState<FilterState>({
         includeFilterPrompt: '',
@@ -30,8 +29,11 @@ const LabelingView: React.FC = () => {
         excludeFilterNegativePrompt: '',
         labeled: false
     });
+
+    const [imageHashes, setImageHashes] = useState<string[]>([]);
+    const [loadedImages, setLoadedImages] = useState<Map<string, string>>(new Map());
+    const [fetchingImages, setFetchingImages] = useState<Set<string>>(new Set());
     
-    const [images, setImages] = useState<{ id: string; url: string }[]>([]);
     const [currentIndex, setCurrentIndex] = useState<number>(0);
     const [filterApplied, setFilterApplied] = useState(false);
 
@@ -42,37 +44,47 @@ const LabelingView: React.FC = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [isFullSize, setIsFullSize] = useState<boolean>(false);
-    const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
-
-    // Deblob URLs on change or unmount
+    // Deblob URLs on unmount
     useEffect(() => {
-        const imagesToClean = images;
+        const urlsToClean = Array.from(loadedImages.values());
         return () => {
-            if (imagesToClean) {
-                imagesToClean.forEach(img => {
-                    if (img.url && img.url.startsWith('blob:')) {
-                        URL.revokeObjectURL(img.url);
-                    }
-                });
-            }
+            urlsToClean.forEach(url => {
+                if (url && url.startsWith('blob:')) {
+                    URL.revokeObjectURL(url);
+                }
+            });
         };
-    }, [images]);
+    }, [loadedImages]);
 
-    // Get image dimensions and reset view state on image change
+    // Pre-fetch/lazy-load images for the current view and filmstrip
     useEffect(() => {
-        if (images[currentIndex]?.url) {
-            setIsFullSize(false); // Reset view on image change
-            setImageDimensions(null); // Clear old dimensions
-            const img = new Image();
-            img.onload = () => {
-                setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
-            };
-            img.src = images[currentIndex].url;
-        } else {
-            setImageDimensions(null);
+        if (imageHashes.length === 0) return;
+
+        const FILMSTRIP_RADIUS = 5;
+        const start = Math.max(0, currentIndex - FILMSTRIP_RADIUS);
+        const end = Math.min(imageHashes.length, currentIndex + FILMSTRIP_RADIUS + 1);
+
+        for (let i = start; i < end; i++) {
+            const hash = imageHashes[i];
+            if (hash && !loadedImages.has(hash) && !fetchingImages.has(hash)) {
+                setFetchingImages(prev => new Set(prev).add(hash));
+                fetchImageById(hash)
+                    .then(url => {
+                        setLoadedImages(prev => new Map(prev).set(hash, url));
+                    })
+                    .catch(err => {
+                        console.error(`Failed to fetch image ${hash}:`, err);
+                    })
+                    .finally(() => {
+                        setFetchingImages(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(hash);
+                            return newSet;
+                        });
+                    });
+            }
         }
-    }, [currentIndex, images]);
+    }, [currentIndex, imageHashes, loadedImages, fetchingImages]);
 
     const handleFilterChange = (field: keyof FilterState, value: string | boolean) => {
         setFilters(prev => ({ ...prev, [field]: value }));
@@ -82,7 +94,9 @@ const LabelingView: React.FC = () => {
         setIsFiltering(true);
         setFilterApplied(true);
         setError(null);
-        setImages([]);
+        setImageHashes([]);
+        setLoadedImages(new Map());
+        setFetchingImages(new Set());
         setCurrentIndex(0);
         setLabelPrompt('');
         setLabelNegativePrompt('');
@@ -95,20 +109,8 @@ const LabelingView: React.FC = () => {
                 exclude_filter_negative_prompt: filters.excludeFilterNegativePrompt,
                 labeled: filters.labeled
             });
-
-            if (hashes.length > 0) {
-                // Fetch all images concurrently
-                const imageUrls = await Promise.all(
-                    hashes.map(hash => fetchImageById(hash))
-                );
-
-                const newImages = hashes.map((hash, index) => ({
-                    id: hash,
-                    url: imageUrls[index]
-                }));
-                
-                setImages(newImages);
-            }
+            setImageHashes(hashes);
+            // The pre-fetching useEffect will handle loading the initial images.
         } catch (err) {
             if (err instanceof Error) setError(err.message);
             else setError('An unknown error occurred while filtering images.');
@@ -118,7 +120,7 @@ const LabelingView: React.FC = () => {
     };
     
     const handleNext = () => {
-        if (currentIndex < images.length - 1) {
+        if (currentIndex < imageHashes.length - 1) {
             setCurrentIndex(prev => prev + 1);
             setLabelPrompt('');
             setLabelNegativePrompt('');
@@ -133,23 +135,31 @@ const LabelingView: React.FC = () => {
         }
     };
     
-    const currentImage = images[currentIndex] || null;
+    const currentHash = imageHashes[currentIndex];
+    const currentUrl = currentHash ? loadedImages.get(currentHash) : null;
+    const isCurrentImageLoading = currentHash ? fetchingImages.has(currentHash) || !currentUrl : false;
+
 
     const handleSubmit = async () => {
-        if (!currentImage || isSubmitting || !labelPrompt.trim()) return;
+        if (!currentHash || isSubmitting || !labelPrompt.trim()) return;
 
         setIsSubmitting(true);
         setError(null);
         try {
-            await submitLabel(currentImage.id, labelPrompt, labelNegativePrompt);
+            await submitLabel(currentHash, labelPrompt, labelNegativePrompt);
 
             // Remove submitted image from list and move to the next one
-            const newImages = images.filter(img => img.id !== currentImage.id);
-            setImages(newImages);
+            const newHashes = imageHashes.filter(hash => hash !== currentHash);
             
-            // Adjust index if the last item was removed, otherwise stay at the same index for the new image
-            if (currentIndex >= newImages.length) {
-                setCurrentIndex(Math.max(0, newImages.length - 1));
+            setLoadedImages(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(currentHash);
+                return newMap;
+            });
+            setImageHashes(newHashes);
+            
+            if (currentIndex >= newHashes.length) {
+                setCurrentIndex(Math.max(0, newHashes.length - 1));
             }
             
             setLabelPrompt('');
@@ -198,25 +208,7 @@ const LabelingView: React.FC = () => {
                         </button>
                     </div>
 
-                    {images.length > 0 && !isFiltering && (
-                        <div>
-                            <h3 className="text-xl font-semibold text-white mb-4 border-b border-gray-700 pb-3">View Options</h3>
-                            <div className="space-y-4 pt-2">
-                                <div className="flex items-center">
-                                    <input
-                                        type="checkbox"
-                                        id="full-resolution"
-                                        className="h-4 w-4 rounded border-gray-500 bg-gray-700 text-purple-500 focus:ring-purple-600"
-                                        checked={isFullSize}
-                                        onChange={(e) => setIsFullSize(e.target.checked)}
-                                    />
-                                    <label htmlFor="full-resolution" className="ml-2 text-sm font-medium text-gray-300">Display full resolution</label>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {currentImage && !isFiltering && (
+                    {currentHash && !isFiltering && (
                         <div>
                              <h3 className="text-xl font-semibold text-white mb-4 border-b border-gray-700 pb-3">Annotate Image</h3>
                               <div className="space-y-4 pt-2">
@@ -238,45 +230,107 @@ const LabelingView: React.FC = () => {
             </div>
 
             {/* Right Column: Image Viewer */}
-            <div className="w-full lg:w-2/3 flex-1 bg-gray-800/50 rounded-2xl flex items-center justify-center p-4 min-h-[550px] relative overflow-auto">
-                {error && <ErrorDisplay error={error} />}
-                {!error && isFiltering && <LoadingSpinner />}
-                {!error && !isFiltering && (
-                    <>
-                        {!filterApplied && <LabeledViewPlaceholder message="Filter to start labeling" subMessage="Use the controls to find images to annotate." />}
-                        {filterApplied && images.length === 0 && <LabeledViewPlaceholder message="No images match your criteria" subMessage="Try adjusting your filters." />}
-                        
-                        {currentImage && imageDimensions && (
-                             <img 
-                                src={currentImage.url} 
-                                alt={`Labeling target ${currentImage.id}`} 
-                                className="rounded-lg shadow-2xl"
-                                style={{
-                                    width: isFullSize ? `${imageDimensions.width}px` : `${imageDimensions.width / 2}px`,
-                                    height: 'auto',
-                                    maxWidth: isFullSize ? 'none' : '100%',
-                                    maxHeight: isFullSize ? 'none' : '100%',
-                                    objectFit: 'contain',
-                                }}
-                             />
-                        )}
-                        {images.length > 0 && currentImage && (
-                            <>
-                                <button onClick={handlePrev} disabled={currentIndex === 0 || isNavDisabled} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Previous Image">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                                </button>
-                                <button onClick={handleNext} disabled={currentIndex >= images.length - 1 || isNavDisabled} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Next Image">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                </button>
-                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-3 py-1 rounded-full">
-                                    {currentIndex + 1} / {images.length}
-                                </div>
-                            </>
-                        )}
-                    </>
+            <div className="w-full lg:w-2/3 flex-1 bg-gray-800/50 rounded-2xl flex flex-col min-h-[550px] lg:min-h-[650px] overflow-hidden">
+                <div className="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
+                    {error && <ErrorDisplay error={error} />}
+                    {!error && isFiltering && <LoadingSpinner />}
+                    {!error && !isFiltering && (
+                        <>
+                            {!filterApplied && <LabeledViewPlaceholder message="Filter to start labeling" subMessage="Use the controls to find images to annotate." />}
+                            {filterApplied && imageHashes.length === 0 && <LabeledViewPlaceholder message="No images match your criteria" subMessage="Try adjusting your filters." />}
+                            
+                            {currentHash && (
+                                <>
+                                    {isCurrentImageLoading ? (
+                                        <LoadingSpinner />
+                                    ) : (
+                                        <img 
+                                            src={currentUrl || ''} 
+                                            alt={`Labeling target ${currentHash}`} 
+                                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                                        />
+                                    )}
+                                </>
+                            )}
+                            {imageHashes.length > 0 && (
+                                <>
+                                    <button onClick={handlePrev} disabled={currentIndex === 0 || isNavDisabled} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Previous Image">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                                    </button>
+                                    <button onClick={handleNext} disabled={currentIndex >= imageHashes.length - 1 || isNavDisabled} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Next Image">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                    </button>
+                                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-3 py-1 rounded-full">
+                                        {currentIndex + 1} / {imageHashes.length}
+                                    </div>
+                                </>
+                            )}
+                        </>
+                    )}
+                </div>
+                {filterApplied && imageHashes.length > 0 && !isFiltering && (
+                   <Filmstrip
+                        imageHashes={imageHashes}
+                        loadedImages={loadedImages}
+                        fetchingImages={fetchingImages}
+                        currentIndex={currentIndex}
+                        setCurrentIndex={setCurrentIndex}
+                    />
                 )}
             </div>
         </div>
+    );
+};
+
+const Filmstrip = ({ imageHashes, loadedImages, fetchingImages, currentIndex, setCurrentIndex }) => {
+    const FILMSTRIP_RADIUS = 5;
+    const start = Math.max(0, currentIndex - FILMSTRIP_RADIUS);
+    const end = Math.min(imageHashes.length, currentIndex + FILMSTRIP_RADIUS + 1);
+    
+    const filmstripIndices = Array.from({ length: end - start }, (_, i) => start + i);
+
+    return (
+        <div className="flex-shrink-0 h-28 bg-gray-900/50 p-2 border-t-2 border-gray-700">
+            <div className="flex justify-center items-center h-full gap-2 overflow-x-auto">
+                {filmstripIndices.map((index) => (
+                    <FilmstripThumbnail
+                        key={imageHashes[index]}
+                        hash={imageHashes[index]}
+                        index={index}
+                        isCurrent={index === currentIndex}
+                        url={loadedImages.get(imageHashes[index])}
+                        isFetching={fetchingImages.has(imageHashes[index])}
+                        onSelect={setCurrentIndex}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const FilmstripThumbnail = ({ hash, index, isCurrent, url, isFetching, onSelect }) => {
+    return (
+        <button
+            onClick={() => onSelect(index)}
+            className={`flex-shrink-0 w-20 h-20 rounded-md overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 ${isCurrent ? 'border-2 border-purple-400 scale-105' : 'border-2 border-transparent hover:border-gray-500'}`}
+            aria-label={`Go to image ${index + 1}`}
+        >
+            {url ? (
+                <img src={url} alt={`Thumbnail ${index + 1}`} className="w-full h-full object-cover" />
+            ) : (
+                <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">
+                    {isFetching ? 
+                        <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg> :
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    }
+                </div>
+            )}
+        </button>
     );
 };
 
