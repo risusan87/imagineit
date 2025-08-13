@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchImageHashes, fetchImageById, submitLabel } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorDisplay from './ErrorDisplay';
@@ -44,22 +44,26 @@ const LabelingView: React.FC = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Deblob URLs on unmount
+    const loadedImagesRef = useRef(loadedImages);
+    loadedImagesRef.current = loadedImages;
+
+    // Clean up all blob URLs on unmount to prevent memory leaks
     useEffect(() => {
-        const urlsToClean = Array.from(loadedImages.values());
         return () => {
+            const urlsToClean = Array.from(loadedImagesRef.current.values());
             urlsToClean.forEach(url => {
                 if (url && url.startsWith('blob:')) {
                     URL.revokeObjectURL(url);
                 }
             });
         };
-    }, [loadedImages]);
+    }, []);
 
-    // Pre-fetch/lazy-load images for the current view and filmstrip
+    // Pre-fetch images for the current view and filmstrip
     useEffect(() => {
         if (imageHashes.length === 0) return;
 
+        // Fetch images for a window around the current index for the filmstrip
         const FILMSTRIP_RADIUS = 5;
         const start = Math.max(0, currentIndex - FILMSTRIP_RADIUS);
         const end = Math.min(imageHashes.length, currentIndex + FILMSTRIP_RADIUS + 1);
@@ -74,6 +78,7 @@ const LabelingView: React.FC = () => {
                     })
                     .catch(err => {
                         console.error(`Failed to fetch image ${hash}:`, err);
+                        // Optionally set an error state for this specific image
                     })
                     .finally(() => {
                         setFetchingImages(prev => {
@@ -94,9 +99,6 @@ const LabelingView: React.FC = () => {
         setIsFiltering(true);
         setFilterApplied(true);
         setError(null);
-        setImageHashes([]);
-        setLoadedImages(new Map());
-        setFetchingImages(new Set());
         setCurrentIndex(0);
         setLabelPrompt('');
         setLabelNegativePrompt('');
@@ -110,10 +112,10 @@ const LabelingView: React.FC = () => {
                 labeled: filters.labeled
             });
             setImageHashes(hashes);
-            // The pre-fetching useEffect will handle loading the initial images.
         } catch (err) {
             if (err instanceof Error) setError(err.message);
             else setError('An unknown error occurred while filtering images.');
+            setImageHashes([]);
         } finally {
             setIsFiltering(false);
         }
@@ -147,8 +149,14 @@ const LabelingView: React.FC = () => {
         setError(null);
         try {
             await submitLabel(currentHash, labelPrompt, labelNegativePrompt);
+            
+            // Clean up the blob URL for the submitted image
+            const urlToDelete = loadedImages.get(currentHash);
+            if (urlToDelete && urlToDelete.startsWith('blob:')) {
+                URL.revokeObjectURL(urlToDelete);
+            }
 
-            // Remove submitted image from list and move to the next one
+            // Remove submitted image from list and update state
             const newHashes = imageHashes.filter(hash => hash !== currentHash);
             
             setLoadedImages(prev => {
@@ -158,8 +166,8 @@ const LabelingView: React.FC = () => {
             });
             setImageHashes(newHashes);
             
-            if (currentIndex >= newHashes.length) {
-                setCurrentIndex(Math.max(0, newHashes.length - 1));
+            if (currentIndex >= newHashes.length && newHashes.length > 0) {
+                setCurrentIndex(newHashes.length - 1);
             }
             
             setLabelPrompt('');
@@ -173,7 +181,7 @@ const LabelingView: React.FC = () => {
         }
     };
     
-    const isNavDisabled = isSubmitting;
+    const isNavDisabled = isSubmitting || isFiltering;
 
     return (
         <div className="flex flex-col lg:flex-row gap-8">
@@ -240,7 +248,7 @@ const LabelingView: React.FC = () => {
                             {filterApplied && imageHashes.length === 0 && <LabeledViewPlaceholder message="No images match your criteria" subMessage="Try adjusting your filters." />}
                             
                             {currentHash && (
-                                <>
+                                <div className="w-full h-full flex items-center justify-center">
                                     {isCurrentImageLoading ? (
                                         <LoadingSpinner />
                                     ) : (
@@ -250,7 +258,7 @@ const LabelingView: React.FC = () => {
                                             className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
                                         />
                                     )}
-                                </>
+                                </div>
                             )}
                             {imageHashes.length > 0 && (
                                 <>
@@ -282,16 +290,31 @@ const LabelingView: React.FC = () => {
     );
 };
 
-const Filmstrip = ({ imageHashes, loadedImages, fetchingImages, currentIndex, setCurrentIndex }) => {
+const Filmstrip: React.FC<{
+    imageHashes: string[];
+    loadedImages: Map<string, string>;
+    fetchingImages: Set<string>;
+    currentIndex: number;
+    setCurrentIndex: (index: number) => void;
+}> = ({ imageHashes, loadedImages, fetchingImages, currentIndex, setCurrentIndex }) => {
     const FILMSTRIP_RADIUS = 5;
     const start = Math.max(0, currentIndex - FILMSTRIP_RADIUS);
     const end = Math.min(imageHashes.length, currentIndex + FILMSTRIP_RADIUS + 1);
     
     const filmstripIndices = Array.from({ length: end - start }, (_, i) => start + i);
 
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+    // Scroll the current thumbnail into view
+    useEffect(() => {
+        const currentThumbnail = scrollContainerRef.current?.querySelector(`[data-index="${currentIndex}"]`);
+        currentThumbnail?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }, [currentIndex]);
+
+
     return (
         <div className="flex-shrink-0 h-28 bg-gray-900/50 p-2 border-t-2 border-gray-700">
-            <div className="flex justify-center items-center h-full gap-2 overflow-x-auto">
+            <div ref={scrollContainerRef} className="flex justify-center items-center h-full gap-2 overflow-x-auto">
                 {filmstripIndices.map((index) => (
                     <FilmstripThumbnail
                         key={imageHashes[index]}
@@ -308,12 +331,21 @@ const Filmstrip = ({ imageHashes, loadedImages, fetchingImages, currentIndex, se
     );
 };
 
-const FilmstripThumbnail = ({ hash, index, isCurrent, url, isFetching, onSelect }) => {
+const FilmstripThumbnail: React.FC<{
+    hash: string;
+    index: number;
+    isCurrent: boolean;
+    url?: string;
+    isFetching: boolean;
+    onSelect: (index: number) => void;
+}> = ({ index, isCurrent, url, isFetching, onSelect }) => {
     return (
         <button
             onClick={() => onSelect(index)}
-            className={`flex-shrink-0 w-20 h-20 rounded-md overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 ${isCurrent ? 'border-2 border-purple-400 scale-105' : 'border-2 border-transparent hover:border-gray-500'}`}
+            data-index={index}
+            className={`flex-shrink-0 w-20 h-20 rounded-md overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-purple-500 ${isCurrent ? 'border-2 border-purple-400 scale-105' : 'border-2 border-transparent hover:border-gray-500'}`}
             aria-label={`Go to image ${index + 1}`}
+            aria-current={isCurrent}
         >
             {url ? (
                 <img src={url} alt={`Thumbnail ${index + 1}`} className="w-full h-full object-cover" />
