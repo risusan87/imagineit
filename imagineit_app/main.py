@@ -79,11 +79,11 @@ def main():
     FRONTEND_DIR = "imagineit_app/static" # The directory of your Vite app
 
     # --- Get ngrok token from environment ---
-    NGROK_TOKEN = os.environ.get('NGROK_AUTHTOKEN')
-    if not NGROK_TOKEN:
-        print("❌ Error: NGROK_AUTHTOKEN not found in environment.")
-        sys.exit(1)
-    ngrok.set_auth_token(NGROK_TOKEN)
+    # NGROK_TOKEN = os.environ.get('NGROK_AUTHTOKEN')
+    # if not NGROK_TOKEN:
+    #     print("❌ Error: NGROK_AUTHTOKEN not found in environment.")
+    #     sys.exit(1)
+    # ngrok.set_auth_token(NGROK_TOKEN)
 
     processes = []
     try:
@@ -108,12 +108,7 @@ def main():
         frontend_proc = subprocess.Popen(shlex.split(frontend_command), cwd=FRONTEND_DIR)
         processes.append(frontend_proc)
         print("✅ Vite frontend server started.")
-        time.sleep(5) # Give Vite a few seconds to compile
 
-        # --- Step D: Start the single ngrok tunnel pointing to Caddy ---
-        public_url = ngrok.connect(CADDY_PORT, "http")
-        print(f"\n🎉 Your application is live!")
-        print(f"🔗 Public URL: {public_url}")
         print("\nPress Ctrl+C in this terminal to stop all services.")
 
         # Keep the script running
@@ -128,7 +123,7 @@ def main():
         for proc in reversed(processes):
             print(f"Terminating process {proc.pid}...")
             proc.terminate() # Terminate all background processes
-        ngrok.kill() # Kill all ngrok tunnels
+        # ngrok.kill() # Kill all ngrok tunnels
         print("✅ All services have been shut down.")
 
 if __name__ == "__main__":
