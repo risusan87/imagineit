@@ -121,8 +121,8 @@ def main():
         # Zrok tunneling
         time.sleep(5) # Wait for services to be fully up before starting tunnel
         zrok, public_url = zrok_share(f'http://localhost:{CADDY_PORT}')
-        print(f"Done! You can access web UI at: {public_url}")
-        print("\nPress Ctrl+C in this terminal to stop all services.")
+        print(f"\n✅ Done! You can access web UI at: {public_url}")
+        print("Press Ctrl+C in this terminal to stop all services.")
 
         # Keep the script running
         while True:
