@@ -49,13 +49,13 @@ def get_image(hash: str):
     return Response(content=image, media_type="image/png")
 
 @app.get("/api/v1/imagine")
-def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: int = 1024, num_inference_steps: int = 28, guidance_scale: float = 7.5, seed: int = None, batch_size: int = 1, inference_count: int = 1):
+def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: int = 1024, num_inference_steps: int = 28, guidance_scale: float = 7.5, seed: int = None, batch_size: int = 1, inference_size: int = 1):
     """
     endpoint for image inference
     """
     from imagineit_app.inference import img_inference
     image_hashes = []
-    for _ in range(inference_count):
+    for _ in range(inference_size):
         image_bytes = img_inference(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -63,7 +63,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
             height=height,
             steps=num_inference_steps,
             guidance_scale=guidance_scale,
-            seed=seed if inference_count == 1 else int.from_bytes(os.urandom(8), signed=False),
+            seed=seed if inference_size == 1 else int.from_bytes(os.urandom(8), signed=False),
             batch_size=batch_size,
         )
         for img in image_bytes:
