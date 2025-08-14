@@ -139,6 +139,7 @@ def main():
         # ngrok.kill() # Kill all ngrok tunnels
         if zrok is not None:
             zrok.terminate()
+        zrok_disable()
         print("✅ All services have been shut down.")
 
 if __name__ == "__main__":
