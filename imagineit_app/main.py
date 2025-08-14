@@ -63,7 +63,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
             height=height,
             steps=num_inference_steps,
             guidance_scale=guidance_scale,
-            seed=seed,
+            seed=seed if inference_count == 1 else int.from_bytes(os.urandom(32), signed=False),
             batch_size=batch_size,
         )
         for img in image_bytes:
