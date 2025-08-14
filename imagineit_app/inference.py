@@ -1,3 +1,4 @@
+import os
 import torch
 from diffusers import StableDiffusionXLPipeline # Use the correct XL pipeline
 from io import BytesIO
@@ -14,10 +15,9 @@ pipe.enable_model_cpu_offload()
 
 def img_inference(prompt: str, steps: int=28, guidance_scale: float=5.0, negative_prompt: str = "", width: int = 1024, height: int = 1024, seed: int=42, batch_size: int=1):
     seed_generator = torch.Generator(device=device)
-    if seed is not None:
-        seed_generator.manual_seed(seed)
     prompts = [prompt] * batch_size
     negative_prompts = [negative_prompt] * batch_size
+    seeds = [torch.Generator(device=device).manual_seed(seed if batch_size == 1 else os.urandom(32))] * batch_size
     images = pipe(
         prompt=prompts, 
         negative_prompt=negative_prompts,
@@ -25,7 +25,7 @@ def img_inference(prompt: str, steps: int=28, guidance_scale: float=5.0, negativ
         guidance_scale=guidance_scale,
         width=width,
         height=height,
-        generator=seed_generator,
+        generator=seeds,
     ).images
     image_bytes_list = []
     for image in images:

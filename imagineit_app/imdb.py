@@ -9,7 +9,7 @@ import hmac
 
 import pandas as pd
 
-IMDB_PATH = os.environ.get('IMDB_PATH', 'data.imdb')
+IMDB_PATH = os.environ.get('IMDB_PATH', 'datav2.imdb')
 
 def metadata_size(f):
     f.seek(0)
