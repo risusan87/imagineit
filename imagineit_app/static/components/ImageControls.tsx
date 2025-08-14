@@ -1,25 +1,31 @@
 import React from 'react';
-import { MIN_STEPS, MAX_STEPS, MIN_GUIDANCE, MAX_GUIDANCE, MIN_DIMENSION, MAX_DIMENSION } from '../constants';
+import { 
+    MIN_STEPS, MAX_STEPS, 
+    MIN_GUIDANCE, MAX_GUIDANCE, 
+    MIN_DIMENSION, MAX_DIMENSION, 
+    DEFAULT_WIDTH, DEFAULT_HEIGHT, DIMENSION_STEP,
+    PREDEFINED_ASPECT_RATIOS
+} from '../constants';
 
 interface ImageControlsProps {
     prompt: string;
     setPrompt: (prompt: string) => void;
     negativePrompt: string;
     setNegativePrompt: (prompt: string) => void;
-    width: number;
-    setWidth: (width: number) => void;
-    height: number;
-    setHeight: (height: number) => void;
+    width: number | '';
+    setWidth: (width: number | '') => void;
+    height: number | '';
+    setHeight: (height: number | '') => void;
     seed: number | null;
     setSeed: (seed: number | null) => void;
     steps: number;
     setSteps: (steps: number) => void;
     guidanceScale: number;
     setGuidanceScale: (scale: number) => void;
-    batchSize: number;
-    setBatchSize: (size: number) => void;
-    inferenceCount: number;
-    setInferenceCount: (count: number) => void;
+    batchSize: number | '';
+    setBatchSize: (size: number | '') => void;
+    inferenceCount: number | '';
+    setInferenceCount: (count: number | '') => void;
     isLoading: boolean;
     onGenerate: () => void;
 }
@@ -52,6 +58,42 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                 setSeed(num);
             }
         }
+    };
+    
+    const handleDimensionChange = (value: string, setter: (val: number | '') => void) => {
+        if (value === '') {
+            setter('');
+        } else {
+            const num = parseInt(value, 10);
+            if (!isNaN(num)) {
+                setter(num);
+            }
+        }
+    };
+
+    const handleDimensionBlur = (
+        value: number | '',
+        setter: (val: number) => void,
+        defaultValue: number
+    ) => {
+        let num = value === '' ? defaultValue : Number(value);
+
+        if (isNaN(num)) {
+            num = defaultValue;
+        }
+
+        // Clamp the value
+        num = Math.max(MIN_DIMENSION, Math.min(MAX_DIMENSION, num));
+
+        // Round to the nearest multiple of DIMENSION_STEP
+        let validatedNum = Math.round(num / DIMENSION_STEP) * DIMENSION_STEP;
+
+        // Ensure the rounded value is not below the minimum dimension
+        if (validatedNum < MIN_DIMENSION) {
+            validatedNum = MIN_DIMENSION;
+        }
+
+        setter(validatedNum);
     };
     
     return (
@@ -90,18 +132,51 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                     <label className="block text-sm font-medium text-gray-300 mb-2">
                         Image Dimensions
                     </label>
+
+                    <div className="mb-4 space-y-4">
+                        {PREDEFINED_ASPECT_RATIOS.map(group => (
+                            <div key={group.name}>
+                                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{group.name}</h4>
+                                <div className="flex flex-wrap gap-2">
+                                    {group.ratios.map(aspect => (
+                                        <button
+                                            key={aspect.ratio}
+                                            onClick={() => {
+                                                setWidth(aspect.width);
+                                                setHeight(aspect.height);
+                                            }}
+                                            disabled={isLoading}
+                                            title={`${aspect.width} x ${aspect.height}`}
+                                            aria-pressed={width === aspect.width && height === aspect.height}
+                                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50
+                                                ${width === aspect.width && height === aspect.height
+                                                    ? 'bg-purple-500 text-white shadow-lg ring-2 ring-offset-2 ring-offset-gray-800 ring-purple-500'
+                                                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                                }`
+                                            }
+                                        >
+                                            {aspect.ratio}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
                     <div className="flex items-center gap-3">
                         <div className="flex-1">
                              <label htmlFor="width" className="sr-only">Width</label>
                             <input
                                 id="width"
                                 type="number"
-                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
                                 value={width}
-                                onChange={(e) => setWidth(Number(e.target.value))}
+                                onChange={(e) => handleDimensionChange(e.target.value, setWidth)}
+                                onBlur={() => handleDimensionBlur(width, setWidth, DEFAULT_WIDTH)}
                                 disabled={isLoading}
                                 min={MIN_DIMENSION}
                                 max={MAX_DIMENSION}
+                                step={DIMENSION_STEP}
                                 placeholder="Width"
                             />
                         </div>
@@ -111,12 +186,14 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                             <input
                                 id="height"
                                 type="number"
-                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
                                 value={height}
-                                onChange={(e) => setHeight(Number(e.target.value))}
+                                onChange={(e) => handleDimensionChange(e.target.value, setHeight)}
+                                onBlur={() => handleDimensionBlur(height, setHeight, DEFAULT_HEIGHT)}
                                 disabled={isLoading}
                                 min={MIN_DIMENSION}
                                 max={MAX_DIMENSION}
+                                step={DIMENSION_STEP}
                                 placeholder="Height"
                             />
                         </div>
@@ -133,11 +210,28 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                             <input
                                 id="inference-count"
                                 type="number"
-                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
                                 value={inferenceCount}
-                                onChange={(e) => setInferenceCount(Math.max(1, Number(e.target.value)))}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === '') {
+                                        setInferenceCount('');
+                                    } else {
+                                        const num = parseInt(value, 10);
+                                        if (!isNaN(num) && num > 0) {
+                                            setInferenceCount(num);
+                                        }
+                                    }
+                                }}
+                                onBlur={(e) => {
+                                    const num = parseInt(e.target.value, 10);
+                                    if (isNaN(num) || num < 1) {
+                                        setInferenceCount(1);
+                                    }
+                                }}
                                 disabled={isLoading}
                                 min="1"
+                                placeholder="1"
                             />
                         </div>
                         <div className="flex-1">
@@ -145,11 +239,28 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                             <input
                                 id="batch-size"
                                 type="number"
-                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
                                 value={batchSize}
-                                onChange={(e) => setBatchSize(Math.max(1, Number(e.target.value)))}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    if (value === '') {
+                                        setBatchSize('');
+                                    } else {
+                                        const num = parseInt(value, 10);
+                                        if (!isNaN(num) && num > 0) {
+                                            setBatchSize(num);
+                                        }
+                                    }
+                                }}
+                                onBlur={(e) => {
+                                    const num = parseInt(e.target.value, 10);
+                                    if (isNaN(num) || num < 1) {
+                                        setBatchSize(1);
+                                    }
+                                }}
                                 disabled={isLoading}
                                 min="1"
+                                placeholder="1"
                             />
                         </div>
                     </div>
