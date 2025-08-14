@@ -238,7 +238,7 @@ const LabelingView: React.FC = () => {
             </div>
 
             {/* Right Column: Image Viewer */}
-            <div className="w-full lg:w-2/3 flex-1 bg-gray-800/50 rounded-2xl flex flex-col min-h-[550px] lg:min-h-[650px] overflow-hidden">
+            <div className="w-full lg:w-2/3 flex-1 bg-gray-800/50 rounded-2xl flex flex-col min-h-[550px] lg:h-[calc(100vh-4rem)] overflow-hidden lg:sticky lg:top-8">
                 <div className="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
                     {error && <ErrorDisplay error={error} />}
                     {!error && isFiltering && <LoadingSpinner />}
