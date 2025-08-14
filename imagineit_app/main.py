@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from pyngrok import ngrok
 # from imagineit_app.dataio import save_img, load_img_metadata, load_img
-from imagineit_app.imdb import add_img, load_img, load_metadata
+from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
 
 app = FastAPI()
@@ -22,7 +22,7 @@ def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative
     """
     Get a list of unlabeled images with optional filtering by prompt and negative prompt
     """
-    metadata_df = load_metadata()
+    metadata_df = read_metadata_v2()
     if metadata_df is None:
         return {"error": "No images found."}
     if include_filter_prompt:
@@ -35,14 +35,15 @@ def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative
         metadata_df = metadata_df[~metadata_df['negative_prompt'].str.split(', ').apply(lambda x: any(item in x for item in exclude_filter_negative_prompt.split(', ')))]
     if labeled is not None:
         metadata_df = metadata_df[metadata_df['labeled'] == labeled]
-    return metadata_df["hash"].tolist()
+    return metadata_df["identity"].tolist()
 
 @app.get("/api/v1/image/{hash}")
 def get_image(hash: str):
     """
     Get an image by its hash
     """
-    image = load_img(hash)
+    image = read_img_v2(hash)
+    print(hash)
     if image is None:
         return {"error": "Image not found."}
     return Response(content=image, media_type="image/png")
@@ -66,7 +67,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
             batch_size=batch_size,
         )
         for img in image_bytes:
-            hash = add_img(img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
+            hash = write_v2(None, img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
             image_hashes.append(hash)
     return image_hashes
 
