@@ -1,9 +1,9 @@
 // Stable Diffusion Parameters
-export const DEFAULT_STEPS = 30;
+export const DEFAULT_STEPS = 28;
 export const MIN_STEPS = 1;
 export const MAX_STEPS = 50;
 
-export const DEFAULT_GUIDANCE = 7.5;
+export const DEFAULT_GUIDANCE = 5.0;
 export const MIN_GUIDANCE = 1;
 export const MAX_GUIDANCE = 20;
 
@@ -62,3 +62,4 @@ export const COOKIE_GUIDANCE_SCALE = 'ai_studio_guidance_scale';
 export const COOKIE_BATCH_SIZE = 'ai_studio_batch_size';
 export const COOKIE_INFERENCE_COUNT = 'ai_studio_inference_count';
 export const COOKIE_ACTIVE_TAB = 'ai_studio_active_tab';
+export const COOKIE_ALWAYS_RANDOM_SEED = 'ai_studio_always_random_seed';

@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
       },
 
       server: {
-        allowedHosts: ['.share.zrok.io'],
+        allowedHosts: ['.share.zrok.io', 'localhost'],
         port: 5173, 
       },
 

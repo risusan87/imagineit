@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
     MIN_STEPS, MAX_STEPS, 
@@ -18,6 +19,8 @@ interface ImageControlsProps {
     setHeight: (height: number | '') => void;
     seed: number | null;
     setSeed: (seed: number | null) => void;
+    alwaysRandomSeed: boolean;
+    setAlwaysRandomSeed: (val: boolean) => void;
     steps: number;
     setSteps: (steps: number) => void;
     guidanceScale: number;
@@ -36,6 +39,7 @@ const ImageControls: React.FC<ImageControlsProps> = ({
     width, setWidth,
     height, setHeight,
     seed, setSeed, 
+    alwaysRandomSeed, setAlwaysRandomSeed,
     steps, setSteps,
     guidanceScale, setGuidanceScale,
     batchSize, setBatchSize,
@@ -43,6 +47,8 @@ const ImageControls: React.FC<ImageControlsProps> = ({
     isLoading, onGenerate 
 }) => {
     
+    const isMultiImage = Number(batchSize) > 1 || Number(inferenceCount) > 1;
+
     const handleRandomSeed = () => {
         const randomSeed = Math.floor(Math.random() * 2**32);
         setSeed(randomSeed);
@@ -267,6 +273,53 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                 </div>
 
                 <div>
+                    <label htmlFor="seed" className="block text-sm font-medium text-gray-300 mb-2">
+                        Seed <span className="text-gray-400">(for reproducibility)</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                        <input
+                            id="seed"
+                            type="number"
+                            className="flex-grow w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            value={seed ?? ''}
+                            onChange={handleSeedChange}
+                            placeholder={alwaysRandomSeed ? "Random each time" : "Leave blank for random"}
+                            disabled={isLoading || isMultiImage || alwaysRandomSeed}
+                            min="0"
+                        />
+                        <button
+                            onClick={handleRandomSeed}
+                            disabled={isLoading || isMultiImage || alwaysRandomSeed}
+                            className="p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Generate random seed"
+                            aria-label="Generate random seed"
+                        >
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5m-6 0a4 4 0 100-8 4 4 0 000 8zm-6 4h4m12 0h-4" />
+                            </svg>
+                        </button>
+                    </div>
+                     <div className="flex items-center mt-3">
+                        <input
+                            type="checkbox"
+                            id="always-random-seed"
+                            className="h-4 w-4 rounded border-gray-500 bg-gray-700 text-purple-500 focus:ring-purple-600 disabled:opacity-50"
+                            checked={alwaysRandomSeed}
+                            onChange={(e) => setAlwaysRandomSeed(e.target.checked)}
+                            disabled={isLoading || isMultiImage}
+                        />
+                        <label htmlFor="always-random-seed" className="ml-2 text-sm font-medium text-gray-300 select-none">
+                            Always use random seed
+                        </label>
+                    </div>
+                     {isMultiImage && (
+                        <p className="text-xs text-gray-400 mt-2">
+                            Seed is disabled when generating more than one image.
+                        </p>
+                    )}
+                </div>
+
+                <div>
                     <label htmlFor="steps" className="flex justify-between text-sm font-medium text-gray-300 mb-2">
                         <span>Sample Steps</span>
                         <span className="text-purple-400 font-semibold">{steps}</span>
@@ -299,35 +352,6 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                         className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500 disabled:opacity-50"
                         disabled={isLoading}
                     />
-                </div>
-                
-                 <div>
-                    <label htmlFor="seed" className="block text-sm font-medium text-gray-300 mb-2">
-                        Seed <span className="text-gray-400">(for reproducibility)</span>
-                    </label>
-                    <div className="flex items-center gap-2">
-                        <input
-                            id="seed"
-                            type="number"
-                            className="flex-grow w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            value={seed ?? ''}
-                            onChange={handleSeedChange}
-                            placeholder="Leave blank for random"
-                            disabled={isLoading}
-                            min="0"
-                        />
-                        <button
-                            onClick={handleRandomSeed}
-                            disabled={isLoading}
-                            className="p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50"
-                            title="Generate random seed"
-                            aria-label="Generate random seed"
-                        >
-                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5m-6 0a4 4 0 100-8 4 4 0 000 8zm-6 4h4m12 0h-4" />
-                            </svg>
-                        </button>
-                    </div>
                 </div>
             </div>
             <div className="mt-8">

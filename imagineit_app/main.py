@@ -7,7 +7,8 @@ import sys
 from fastapi import FastAPI
 from fastapi.responses import Response
 from pyngrok import ngrok
-from imagineit_app.dataio import save_img, load_img_metadata, load_img
+# from imagineit_app.dataio import save_img, load_img_metadata, load_img
+from imagineit_app.imdb import add_img, load_img, load_metadata
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
 
 app = FastAPI()
@@ -21,7 +22,7 @@ def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative
     """
     Get a list of unlabeled images with optional filtering by prompt and negative prompt
     """
-    metadata_df = load_img_metadata()
+    metadata_df = load_metadata()
     if metadata_df is None:
         return {"error": "No images found."}
     if include_filter_prompt:
@@ -65,7 +66,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
             batch_size=batch_size,
         )
         for img in image_bytes:
-            hash = save_img(img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
+            hash = add_img(img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
             image_hashes.append(hash)
     return image_hashes
 
@@ -119,7 +120,7 @@ def main():
         print("✅ Vite frontend server started.")
 
         # Zrok tunneling
-        time.sleep(5) # Wait for services to be fully up before starting tunnel
+        #time.sleep(5) # Wait for services to be fully up before starting tunnel
         zrok, public_url = zrok_share(f'http://localhost:{CADDY_PORT}')
         print(f"\n✅ Done! You can access web UI at: {public_url}")
         print("Press Ctrl+C in this terminal to stop all services.")

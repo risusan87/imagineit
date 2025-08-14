@@ -4,7 +4,8 @@ import {
     DEFAULT_STEPS, DEFAULT_GUIDANCE, DEFAULT_WIDTH, DEFAULT_HEIGHT,
     COOKIE_PROMPT, COOKIE_NEGATIVE_PROMPT, COOKIE_WIDTH, COOKIE_HEIGHT,
     COOKIE_SEED, COOKIE_STEPS, COOKIE_GUIDANCE_SCALE, COOKIE_BATCH_SIZE,
-    COOKIE_INFERENCE_COUNT, COOKIE_ACTIVE_TAB, COOKIE_EXPIRATION_DAYS
+    COOKIE_INFERENCE_COUNT, COOKIE_ACTIVE_TAB, COOKIE_EXPIRATION_DAYS,
+    COOKIE_ALWAYS_RANDOM_SEED
 } from './constants';
 import { generateImage } from './services/geminiService';
 import Header from './components/Header';
@@ -55,6 +56,7 @@ const App: React.FC = () => {
         }
         return Math.floor(Math.random() * 2**32);
     });
+    const [alwaysRandomSeed, setAlwaysRandomSeed] = useState<boolean>(() => getCookie(COOKIE_ALWAYS_RANDOM_SEED) === 'true');
     const [steps, setSteps] = useState<number>(() => getNumberFromCookie(COOKIE_STEPS, DEFAULT_STEPS));
     const [guidanceScale, setGuidanceScale] = useState<number>(() => getNumberFromCookie(COOKIE_GUIDANCE_SCALE, DEFAULT_GUIDANCE));
     const [batchSize, setBatchSize] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_BATCH_SIZE, 1));
@@ -73,11 +75,24 @@ const App: React.FC = () => {
     useEffect(() => { setCookie(COOKIE_WIDTH, String(width), COOKIE_EXPIRATION_DAYS); }, [width]);
     useEffect(() => { setCookie(COOKIE_HEIGHT, String(height), COOKIE_EXPIRATION_DAYS); }, [height]);
     useEffect(() => { setCookie(COOKIE_SEED, seed, COOKIE_EXPIRATION_DAYS); }, [seed]);
+    useEffect(() => { setCookie(COOKIE_ALWAYS_RANDOM_SEED, String(alwaysRandomSeed), COOKIE_EXPIRATION_DAYS); }, [alwaysRandomSeed]);
     useEffect(() => { setCookie(COOKIE_STEPS, steps, COOKIE_EXPIRATION_DAYS); }, [steps]);
     useEffect(() => { setCookie(COOKIE_GUIDANCE_SCALE, guidanceScale, COOKIE_EXPIRATION_DAYS); }, [guidanceScale]);
     useEffect(() => { setCookie(COOKIE_BATCH_SIZE, String(batchSize), COOKIE_EXPIRATION_DAYS); }, [batchSize]);
     useEffect(() => { setCookie(COOKIE_INFERENCE_COUNT, String(inferenceCount), COOKIE_EXPIRATION_DAYS); }, [inferenceCount]);
     useEffect(() => { setCookie(COOKIE_ACTIVE_TAB, activeTab, COOKIE_EXPIRATION_DAYS); }, [activeTab]);
+
+    // When generating multiple images, the seed must be random.
+    useEffect(() => {
+        const numericBatchSize = batchSize === '' ? 1 : Number(batchSize);
+        const numericInferenceCount = inferenceCount === '' ? 1 : Number(inferenceCount);
+
+        if (numericBatchSize > 1 || numericInferenceCount > 1) {
+            if (seed !== null) {
+                setSeed(null);
+            }
+        }
+    }, [batchSize, inferenceCount, seed]);
 
     const handleGenerate = useCallback(async () => {
         if (isLoading) return;
@@ -85,6 +100,10 @@ const App: React.FC = () => {
         setIsLoading(true);
         setError(null);
         setGeneratedImages(null);
+
+        const seedForGeneration = alwaysRandomSeed
+            ? Math.floor(Math.random() * 2**32)
+            : seed;
 
         try {
             const imageUrls = await generateImage(
@@ -94,7 +113,7 @@ const App: React.FC = () => {
                 height || DEFAULT_HEIGHT,
                 steps,
                 guidanceScale,
-                seed,
+                seedForGeneration,
                 batchSize || 1,
                 inferenceCount || 1
             );
@@ -108,7 +127,7 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [isLoading, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount]);
+    }, [isLoading, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount, alwaysRandomSeed]);
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 font-sans flex flex-col items-center p-4 sm:p-6 lg:p-8">
@@ -130,6 +149,8 @@ const App: React.FC = () => {
                                     setHeight={setHeight}
                                     seed={seed}
                                     setSeed={setSeed}
+                                    alwaysRandomSeed={alwaysRandomSeed}
+                                    setAlwaysRandomSeed={setAlwaysRandomSeed}
                                     steps={steps}
                                     setSteps={setSteps}
                                     guidanceScale={guidanceScale}
