@@ -26,13 +26,13 @@ def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative
     if metadata_df is None:
         return {"error": "No images found."}
     if include_filter_prompt:
-        metadata_df = metadata_df[metadata_df['prompt'].str.split(', ').apply(lambda x: any(item in x for item in include_filter_prompt.split(', ')))]
+        metadata_df = metadata_df[metadata_df['prompt'].str.split(',').apply(lambda x: any(item in x for item in include_filter_prompt.split(',')))]
     if include_filter_negative_prompt:
-        metadata_df = metadata_df[metadata_df['negative_prompt'].str.split(', ').apply(lambda x: any(item in x for item in include_filter_negative_prompt.split(', ')))]
+        metadata_df = metadata_df[metadata_df['negative_prompt'].str.split(',').apply(lambda x: any(item in x for item in include_filter_negative_prompt.split(',')))]
     if exclude_filter_prompt:
-        metadata_df = metadata_df[~metadata_df['prompt'].str.split(', ').apply(lambda x: any(item in x for item in exclude_filter_prompt.split(', ')))]
+        metadata_df = metadata_df[~metadata_df['prompt'].str.split(',').apply(lambda x: any(item in x for item in exclude_filter_prompt.split(',')))]
     if exclude_filter_negative_prompt:
-        metadata_df = metadata_df[~metadata_df['negative_prompt'].str.split(', ').apply(lambda x: any(item in x for item in exclude_filter_negative_prompt.split(', ')))]
+        metadata_df = metadata_df[~metadata_df['negative_prompt'].str.split(',').apply(lambda x: any(item in x for item in exclude_filter_negative_prompt.split(',')))]
     if labeled is not None:
         metadata_df = metadata_df[metadata_df['labeled'] == labeled]
     return metadata_df["identity"].tolist()
