@@ -128,6 +128,7 @@ def add_img(img: bytes, seed: int, prompt: str, negative_prompt: str, width: int
         write_next_index_position(f, next_next_index)
         f.write(current_img_bytes)
         f.write(img)
+    return hex_digest
     
 def load_img(hash: str):
     hash = hex(int(hash, 16))
