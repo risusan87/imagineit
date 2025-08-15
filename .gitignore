@@ -6,6 +6,10 @@ __pycache__
 .note
 ignore
 *.egg-info
+*.png
+*.imdb
+*.ipynb
+*.csv
 
 # Logs
 logs
