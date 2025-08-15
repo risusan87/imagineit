@@ -31,4 +31,4 @@ def img_inference(prompt: str, steps: int=28, guidance_scale: float=5.0, negativ
         buffer = BytesIO()
         image.save(buffer, format="PNG")
         image_bytes_list.append(buffer.getvalue())
-    return image_bytes_list
+    return image_bytes_list, seeds

@@ -56,7 +56,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
     from imagineit_app.inference import img_inference
     image_hashes = []
     for _ in range(inference_size):
-        image_bytes = img_inference(
+        image_bytes, seeds = img_inference(
             prompt=prompt,
             negative_prompt=negative_prompt,
             width=width,
@@ -66,7 +66,7 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
             seed=seed if inference_size == 1 else int.from_bytes(os.urandom(8), signed=False),
             batch_size=batch_size,
         )
-        for img in image_bytes:
+        for img, seed in zip(image_bytes, seeds):
             hash = write_v2(None, img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
             image_hashes.append(hash)
     return image_hashes
