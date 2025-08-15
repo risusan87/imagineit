@@ -16,7 +16,7 @@ pipe.enable_model_cpu_offload()
 def img_inference(prompt: str, steps: int=28, guidance_scale: float=5.0, negative_prompt: str = "", width: int = 1024, height: int = 1024, seed: int=42, batch_size: int=1):
     prompts = [prompt] * batch_size
     negative_prompts = [negative_prompt] * batch_size
-    numerical_seeds = [seed if batch_size == 1 else (int.from_bytes(os.urandom(8), signed=False) for _ in range(batch_size))]
+    numerical_seeds = [(seed)] if batch_size == 1 else [int.from_bytes(os.urandom(8), signed=False) for _ in range(batch_size)]
     seeds = [torch.Generator(device=device).manual_seed(nseed) for nseed in numerical_seeds]
     images = pipe(
         prompt=prompts, 
