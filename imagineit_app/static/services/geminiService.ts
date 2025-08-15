@@ -1,3 +1,27 @@
+
+import { getCookie } from '../utils/cookies';
+import { COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN } from '../constants';
+
+/**
+ * Determines the base URL for API requests based on user settings.
+ * Reads from cookies to decide whether to use relative paths (combined)
+ * or a full URL (dedicated domain).
+ * @returns The base URL string, or an empty string for relative paths.
+ */
+const getApiBaseUrl = (): string => {
+    const mode = getCookie(COOKIE_BACKEND_MODE);
+    if (mode === 'dedicated') {
+        const domain = getCookie(COOKIE_DEDICATED_DOMAIN);
+        // Basic validation for the domain
+        if (domain && (domain.startsWith('http://') || domain.startsWith('https://'))) {
+             // Remove trailing slash if present
+            return domain.replace(/\/$/, '');
+        }
+    }
+    return ''; // For combined mode, use relative paths
+};
+
+
 /**
  * Generates an image by making a GET request to the backend API.
  * @param prompt The main prompt.
@@ -41,8 +65,9 @@ export const generateImage = async (
     if (seed !== null && seed >= 0) {
         params.append('seed', String(seed));
     }
-
-    const url = `/api/v1/imagine?${params.toString()}`;
+    
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/imagine?${params.toString()}`;
 
     try {
         const response = await fetch(url);
@@ -108,7 +133,8 @@ export const fetchImageHashes = async (filters: ImageHashFilters): Promise<strin
     if (filters.exclude_filter_negative_prompt) params.append('exclude_filter_negative_prompt', filters.exclude_filter_negative_prompt);
     params.append('labeled', String(filters.labeled));
 
-    const url = `/api/v1/imghashlist?${params.toString()}`;
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/imghashlist?${params.toString()}`;
 
     try {
         const response = await fetch(url);
@@ -132,7 +158,8 @@ export const fetchImageHashes = async (filters: ImageHashFilters): Promise<strin
  * @returns A promise that resolves to a blob URL of the image.
  */
 export const fetchImageById = async (id: string): Promise<string> => {
-    const url = `/api/v1/image/${id}`;
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/image/${id}`;
     try {
         const response = await fetch(url);
         if (!response.ok) {
@@ -160,7 +187,8 @@ export const fetchImageById = async (id: string): Promise<string> => {
  * @param negativePrompt The negative label prompt.
  */
 export const submitLabel = async (id: string, prompt: string, negativePrompt: string): Promise<void> => {
-    const url = `/api/v1/label`;
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/label`;
     try {
         const response = await fetch(url, {
             method: 'POST',

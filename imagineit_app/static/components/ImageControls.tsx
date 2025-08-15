@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
     MIN_STEPS, MAX_STEPS, 
@@ -32,6 +31,48 @@ interface ImageControlsProps {
     isLoading: boolean;
     onGenerate: () => void;
 }
+
+const AspectRatioVisualizer: React.FC<{ width: number | ''; height: number | '' }> = ({ width, height }) => {
+    if (width === '' || height === '' || +width === 0 || +height === 0) {
+        return (
+            <div className="h-28 bg-gray-900/50 rounded-lg flex items-center justify-center text-center text-gray-500 text-sm p-4">
+                Select an aspect ratio or enter custom dimensions
+            </div>
+        );
+    }
+
+    const numericWidth = Number(width);
+    const numericHeight = Number(height);
+
+    const containerSize = 96; // 6rem or 96px
+
+    let displayWidth, displayHeight;
+
+    // Calculate display dimensions to fit inside the square container
+    if (numericWidth > numericHeight) {
+        // Landscape or square
+        displayWidth = containerSize;
+        displayHeight = (numericHeight / numericWidth) * containerSize;
+    } else {
+        // Portrait
+        displayHeight = containerSize;
+        displayWidth = (numericWidth / numericHeight) * containerSize;
+    }
+
+    return (
+        <div className="h-28 bg-gray-900/50 rounded-lg flex items-center justify-center p-2 transition-all duration-300">
+            <div
+                style={{
+                    width: `${displayWidth}px`,
+                    height: `${displayHeight}px`,
+                    transition: 'width 0.3s ease, height 0.3s ease',
+                }}
+                className="bg-purple-500/30 border-2 border-purple-400 rounded-md shadow-inner"
+            ></div>
+        </div>
+    );
+};
+
 
 const ImageControls: React.FC<ImageControlsProps> = ({ 
     prompt, setPrompt, 
@@ -138,6 +179,10 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                     <label className="block text-sm font-medium text-gray-300 mb-2">
                         Image Dimensions
                     </label>
+
+                    <div className="mb-4">
+                        <AspectRatioVisualizer width={width} height={height} />
+                    </div>
 
                     <div className="mb-4 space-y-4">
                         {PREDEFINED_ASPECT_RATIOS.map(group => (

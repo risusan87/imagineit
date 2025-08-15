@@ -5,7 +5,7 @@ import {
     COOKIE_PROMPT, COOKIE_NEGATIVE_PROMPT, COOKIE_WIDTH, COOKIE_HEIGHT,
     COOKIE_SEED, COOKIE_STEPS, COOKIE_GUIDANCE_SCALE, COOKIE_BATCH_SIZE,
     COOKIE_INFERENCE_COUNT, COOKIE_ACTIVE_TAB, COOKIE_EXPIRATION_DAYS,
-    COOKIE_ALWAYS_RANDOM_SEED
+    COOKIE_ALWAYS_RANDOM_SEED, COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN
 } from './constants';
 import { generateImage } from './services/geminiService';
 import Header from './components/Header';
@@ -66,6 +66,10 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
+    // State for backend settings
+    const [backendMode, setBackendMode] = useState<'combined' | 'dedicated'>(() => (getCookie(COOKIE_BACKEND_MODE) as 'combined' | 'dedicated') || 'combined');
+    const [dedicatedDomain, setDedicatedDomain] = useState<string>(() => getCookie(COOKIE_DEDICATED_DOMAIN) || '');
+
     // State for active tab, also persisted.
     const [activeTab, setActiveTab] = useState<Tab>(() => (getCookie(COOKIE_ACTIVE_TAB) as Tab) || 'inference');
 
@@ -81,6 +85,9 @@ const App: React.FC = () => {
     useEffect(() => { setCookie(COOKIE_BATCH_SIZE, String(batchSize), COOKIE_EXPIRATION_DAYS); }, [batchSize]);
     useEffect(() => { setCookie(COOKIE_INFERENCE_COUNT, String(inferenceCount), COOKIE_EXPIRATION_DAYS); }, [inferenceCount]);
     useEffect(() => { setCookie(COOKIE_ACTIVE_TAB, activeTab, COOKIE_EXPIRATION_DAYS); }, [activeTab]);
+    useEffect(() => { setCookie(COOKIE_BACKEND_MODE, backendMode, COOKIE_EXPIRATION_DAYS); }, [backendMode]);
+    useEffect(() => { setCookie(COOKIE_DEDICATED_DOMAIN, dedicatedDomain, COOKIE_EXPIRATION_DAYS); }, [dedicatedDomain]);
+
 
     // When generating multiple images, the seed must be random.
     useEffect(() => {
@@ -131,7 +138,12 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 font-sans flex flex-col items-center p-4 sm:p-6 lg:p-8">
-            <Header />
+            <Header 
+                backendMode={backendMode}
+                setBackendMode={setBackendMode}
+                dedicatedDomain={dedicatedDomain}
+                setDedicatedDomain={setDedicatedDomain}
+            />
             <main className="w-full max-w-6xl mt-8">
                 <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
                 <div className="mt-6">

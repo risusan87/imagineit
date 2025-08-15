@@ -63,3 +63,7 @@ export const COOKIE_BATCH_SIZE = 'ai_studio_batch_size';
 export const COOKIE_INFERENCE_COUNT = 'ai_studio_inference_count';
 export const COOKIE_ACTIVE_TAB = 'ai_studio_active_tab';
 export const COOKIE_ALWAYS_RANDOM_SEED = 'ai_studio_always_random_seed';
+
+// Cookie Keys for Backend Settings
+export const COOKIE_BACKEND_MODE = 'ai_studio_backend_mode';
+export const COOKIE_DEDICATED_DOMAIN = 'ai_studio_dedicated_domain';

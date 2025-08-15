@@ -191,10 +191,7 @@ const LabelingView: React.FC = () => {
                     <div>
                         <h3 className="text-xl font-semibold text-white mb-4 border-b border-gray-700 pb-3">Filter Images</h3>
                         <div className="space-y-4 pt-2">
-                             <FilterInput label="Include Prompt" value={filters.includeFilterPrompt} onChange={val => handleFilterChange('includeFilterPrompt', val)} disabled={isFiltering} />
-                             <FilterInput label="Include Negative Prompt" value={filters.includeFilterNegativePrompt} onChange={val => handleFilterChange('includeFilterNegativePrompt', val)} disabled={isFiltering} />
-                             <FilterInput label="Exclude Prompt" value={filters.excludeFilterPrompt} onChange={val => handleFilterChange('excludeFilterPrompt', val)} disabled={isFiltering} />
-                             <FilterInput label="Exclude Negative Prompt" value={filters.excludeFilterNegativePrompt} onChange={val => handleFilterChange('excludeFilterNegativePrompt', val)} disabled={isFiltering} />
+                             <FilterInput label="Search for prompt" value={filters.includeFilterPrompt} onChange={val => handleFilterChange('includeFilterPrompt', val)} disabled={isFiltering} />
                              <div className="flex items-center pt-2">
                                 <input
                                     type="checkbox"
