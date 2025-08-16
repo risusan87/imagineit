@@ -238,14 +238,12 @@ export const fetchImagePrompt = async (hash: string): Promise<string> => {
  */
 export const submitLabel = async (id: string, label: string): Promise<void> => {
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/v1/${id}/label`;
+    const params = new URLSearchParams({ label });
+    const url = `${baseUrl}/api/v1/${id}/label?${params.toString()}`;
+
     try {
         const response = await fetch(url, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ label }),
         });
 
         if (!response.ok) {

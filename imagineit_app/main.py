@@ -68,7 +68,7 @@ def get_label(hash: str):
         return {"error": "Label not found."}
     return {"label": label.iloc[0]}
 
-@app.update("/api/v1/{hash}/label")
+@app.put("/api/v1/{hash}/label")
 def update_label(hash: str, label: str):
     write_v2(hash, labeled=True, label=label)
     return {"status": "success"}
