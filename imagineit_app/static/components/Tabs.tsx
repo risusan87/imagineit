@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type Tab = 'inference' | 'label' | 'train';
+export type Tab = 'inference' | 'label' | 'train' | 'export';
 
 interface TabsProps {
     activeTab: Tab;
@@ -13,6 +13,7 @@ const Tabs: React.FC<TabsProps> = ({ activeTab, setActiveTab }) => {
         { id: 'inference', label: 'Inference' },
         { id: 'label', label: 'Label' },
         { id: 'train', label: 'Train' },
+        { id: 'export', label: 'Export' },
     ];
 
     return (

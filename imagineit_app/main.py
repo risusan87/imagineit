@@ -3,12 +3,15 @@ import shlex
 import os
 import time
 import sys
+from io import BytesIO
+from pathlib import Path
+import zipfile
 
 from fastapi import FastAPI
 from fastapi.responses import Response
-from pyngrok import ngrok
+from pydantic import BaseModel
 # from imagineit_app.dataio import save_img, load_img_metadata, load_img
-from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2, del_img_v2
+from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2, del_img_v2, read_mapper_v2
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
 
 app = FastAPI()
@@ -57,8 +60,6 @@ def delete_image(hash: str):
     if not success:
         return {"error": "Image not found."}
     return {"status": "success"}
-
-from pydantic import BaseModel
 class ImagePayload(BaseModel):
     image: str
 
@@ -92,6 +93,48 @@ def get_label(hash: str):
 def update_label(hash: str, label: str):
     write_v2(hash, labeled=True, label=label)
     return {"status": "success"}
+
+class ZipFilePayload(BaseModel):
+    zip_file_name: str
+    is_train_data: bool
+    img_hashes: list[str]
+    return_file: bool
+
+@app.post("/api/v1/zipfile")
+def create_zipfile(zip_info: ZipFilePayload):
+    # Create a zip file containing the specified images
+    file_structure = []
+    if zip_info.is_train_data:
+        metadata_df = read_metadata_v2()
+        metadata_df = metadata_df[metadata_df['identity'].isin(zip_info.img_hashes)]
+    for identity_hash in zip_info.img_hashes:
+        image_folder = Path("images")
+        img = read_img_v2(identity_hash)
+        if img is None:
+            continue
+        if zip_info.is_train_data:
+            image_folder = Path("train_data")
+            if metadata_df.loc[metadata_df['identity'] == identity_hash, "labeled"].item() is False:
+                continue
+            text_content: str = metadata_df.loc[metadata_df['identity'] == identity_hash, "label"].item()
+            file_structure.append((f"{identity_hash}.txt", BytesIO(text_content.encode('utf-8'))))
+            file_structure.append((f"{identity_hash}.png", BytesIO(img)))
+        else:
+            file_structure.append((f"{identity_hash}.png", BytesIO(img)))
+    zipped_file = BytesIO()
+    with zipfile.ZipFile(zipped_file, 'w') as zipf:
+        for file_name, file_data in file_structure:
+            path = image_folder / file_name
+            zipf.writestr(str(path), file_data.getvalue())
+    return_json = {
+        "status": "success",
+    }
+    if zip_info.return_file is True:
+        return_json["file"] = zipped_file.getvalue().hex()
+    else:
+        with open(zip_info.zip_file_name + ".zip", 'wb') as f:
+            f.write(zipped_file.getvalue())
+    return return_json
 
 @app.get("/api/v1/tags")
 def get_tags():
