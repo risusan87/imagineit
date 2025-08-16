@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchImageHashes, fetchImageById, submitLabel } from '../services/geminiService';
+import { fetchImageHashes, fetchImageById, submitLabel, fetchImageLabel, fetchImagePrompt } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorDisplay from './ErrorDisplay';
 
@@ -38,10 +38,10 @@ const LabelingView: React.FC = () => {
     const [filterApplied, setFilterApplied] = useState(false);
 
     const [labelPrompt, setLabelPrompt] = useState('');
-    const [labelNegativePrompt, setLabelNegativePrompt] = useState('');
 
     const [isFiltering, setIsFiltering] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isLabelLoading, setIsLabelLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const loadedImagesRef = useRef(loadedImages);
@@ -58,6 +58,35 @@ const LabelingView: React.FC = () => {
             });
         };
     }, []);
+
+    const currentHash = imageHashes[currentIndex];
+
+    // Fetch the label or original prompt for the current image
+    useEffect(() => {
+        const loadLabel = async () => {
+            if (currentHash) {
+                setIsLabelLoading(true);
+                setLabelPrompt('');
+                setError(null);
+                try {
+                    let label = await fetchImageLabel(currentHash);
+                    if (!label.trim()) {
+                        label = await fetchImagePrompt(currentHash);
+                    }
+                    setLabelPrompt(label);
+                } catch (err) {
+                    if (err instanceof Error) setError(err.message);
+                    else setError('Failed to load image details.');
+                } finally {
+                    setIsLabelLoading(false);
+                }
+            } else {
+                setLabelPrompt(''); // Clear prompt if no image is selected
+            }
+        };
+
+        loadLabel();
+    }, [currentHash]);
 
     // Pre-fetch images for the current view and filmstrip
     useEffect(() => {
@@ -101,14 +130,13 @@ const LabelingView: React.FC = () => {
         setError(null);
         setCurrentIndex(0);
         setLabelPrompt('');
-        setLabelNegativePrompt('');
         
         try {
             const hashes = await fetchImageHashes({
                 include_filter_prompt: filters.includeFilterPrompt,
-                include_filter_negative_prompt: filters.includeFilterNegativePrompt,
-                exclude_filter_prompt: filters.excludeFilterPrompt,
-                exclude_filter_negative_prompt: filters.excludeFilterNegativePrompt,
+                include_filter_negative_prompt: '',
+                exclude_filter_prompt: '',
+                exclude_filter_negative_prompt: '',
                 labeled: filters.labeled
             });
             setImageHashes(hashes);
@@ -124,20 +152,15 @@ const LabelingView: React.FC = () => {
     const handleNext = () => {
         if (currentIndex < imageHashes.length - 1) {
             setCurrentIndex(prev => prev + 1);
-            setLabelPrompt('');
-            setLabelNegativePrompt('');
         }
     };
     
     const handlePrev = () => {
         if (currentIndex > 0) {
             setCurrentIndex(prev => prev - 1);
-            setLabelPrompt('');
-            setLabelNegativePrompt('');
         }
     };
     
-    const currentHash = imageHashes[currentIndex];
     const currentUrl = currentHash ? loadedImages.get(currentHash) : null;
     const isCurrentImageLoading = currentHash ? fetchingImages.has(currentHash) || !currentUrl : false;
 
@@ -148,7 +171,7 @@ const LabelingView: React.FC = () => {
         setIsSubmitting(true);
         setError(null);
         try {
-            await submitLabel(currentHash, labelPrompt, labelNegativePrompt);
+            await submitLabel(currentHash, labelPrompt, '');
             
             // Clean up the blob URL for the submitted image
             const urlToDelete = loadedImages.get(currentHash);
@@ -171,7 +194,6 @@ const LabelingView: React.FC = () => {
             }
             
             setLabelPrompt('');
-            setLabelNegativePrompt('');
 
         } catch (err) {
             if (err instanceof Error) setError(err.message);
@@ -219,14 +241,18 @@ const LabelingView: React.FC = () => {
                               <div className="space-y-4 pt-2">
                                 <div>
                                     <label htmlFor="label-prompt" className="block text-sm font-medium text-gray-300 mb-2">Label Prompt</label>
-                                    <textarea id="label-prompt" rows={4} className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50" value={labelPrompt} onChange={(e) => setLabelPrompt(e.target.value)} placeholder="Describe the image content..." disabled={isSubmitting}/>
-                                </div>
-                                <div>
-                                    <label htmlFor="label-negative-prompt" className="block text-sm font-medium text-gray-300 mb-2">Negative Prompt <span className="text-gray-400">(optional)</span></label>
-                                    <textarea id="label-negative-prompt" rows={2} className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50" value={labelNegativePrompt} onChange={(e) => setLabelNegativePrompt(e.target.value)} placeholder="Describe what to avoid..." disabled={isSubmitting} />
+                                    <textarea 
+                                        id="label-prompt" 
+                                        rows={4} 
+                                        className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50" 
+                                        value={labelPrompt} 
+                                        onChange={(e) => setLabelPrompt(e.target.value)} 
+                                        placeholder={isLabelLoading ? "Loading label..." : "Describe the image content..."} 
+                                        disabled={isSubmitting || isLabelLoading}
+                                    />
                                 </div>
                             </div>
-                             <button onClick={handleSubmit} disabled={isSubmitting || !labelPrompt.trim()} className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                             <button onClick={handleSubmit} disabled={isSubmitting || !labelPrompt.trim() || isLabelLoading} className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
                                 {isSubmitting ? 'Submitting...' : 'Submit & Next'}
                             </button>
                         </div>

@@ -37,7 +37,7 @@ def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative
         metadata_df = metadata_df[metadata_df['labeled'] == labeled]
     return metadata_df["identity"].tolist()
 
-@app.get("/api/v1/image/{hash}")
+@app.get("/api/v1/{hash}/image")
 def get_image(hash: str):
     """
     Get an image by its hash
@@ -47,6 +47,26 @@ def get_image(hash: str):
     if image is None:
         return {"error": "Image not found."}
     return Response(content=image, media_type="image/png")
+
+@app.get("/api/v1/{hash}/prompt")
+def get_prompt(hash: str):
+    metadata_df = read_metadata_v2()
+    if metadata_df is None:
+        return {"error": "No images found."}
+    prompt = metadata_df.loc[metadata_df['identity'] == hash, 'prompt']
+    if prompt.empty:
+        return {"error": "Prompt not found."}
+    return prompt.iloc[0]
+
+@app.get("/api/v1/{hash}/label")
+def get_label(hash: str):
+    metadata_df = read_metadata_v2()
+    if metadata_df is None:
+        return {"error": "No images found."}
+    label = metadata_df.loc[metadata_df['identity'] == hash, 'label']
+    if label.empty:
+        return {"error": "Label not found."}
+    return label.iloc[0]
 
 @app.get("/api/v1/tags")
 def get_tags():

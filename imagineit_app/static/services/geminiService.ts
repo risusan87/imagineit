@@ -1,4 +1,3 @@
-
 import { getCookie } from '../utils/cookies';
 import { COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN } from '../constants';
 
@@ -159,7 +158,7 @@ export const fetchImageHashes = async (filters: ImageHashFilters): Promise<strin
  */
 export const fetchImageById = async (id: string): Promise<string> => {
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/v1/image/${id}`;
+    const url = `${baseUrl}/api/v1/${id}/image`;
     try {
         const response = await fetch(url);
         if (!response.ok) {
@@ -179,6 +178,56 @@ export const fetchImageById = async (id: string): Promise<string> => {
     }
 };
 
+
+/**
+ * Fetches the stored label for an image.
+ * @param hash The hash ID of the image.
+ * @returns A promise that resolves to the label string, or an empty string if not labeled.
+ */
+export const fetchImageLabel = async (hash: string): Promise<string> => {
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/${hash}/label`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            // It's possible an unlabeled image returns 404, treat it as empty
+            if (response.status === 404) {
+                return '';
+            }
+            throw new Error(`Failed to fetch label with status ${response.status}`);
+        }
+        return await response.text();
+    } catch (error) {
+        console.error(`Fetch image label for ${hash} failed:`, error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        throw error;
+    }
+};
+
+/**
+ * Fetches the original prompt for an image.
+ * @param hash The hash ID of the image.
+ * @returns A promise that resolves to the original prompt string.
+ */
+export const fetchImagePrompt = async (hash: string): Promise<string> => {
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/${hash}/prompt`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch prompt with status ${response.status}`);
+        }
+        return await response.text();
+    } catch (error) {
+        console.error(`Fetch image prompt for ${hash} failed:`, error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        throw error;
+    }
+};
 
 /**
  * Submits a label for an image to the backend.
