@@ -56,7 +56,7 @@ def get_prompt(hash: str):
     prompt = metadata_df.loc[metadata_df['identity'] == hash, 'prompt']
     if prompt.empty:
         return {"error": "Prompt not found."}
-    return prompt.iloc[0]
+    return str(prompt.iloc[0]).replace('"', '')
 
 @app.get("/api/v1/{hash}/label")
 def get_label(hash: str):
@@ -66,7 +66,7 @@ def get_label(hash: str):
     label = metadata_df.loc[metadata_df['identity'] == hash, 'label']
     if label.empty:
         return {"error": "Label not found."}
-    return label.iloc[0]
+    return str(label.iloc[0]).replace('"', '')
 
 @app.get("/api/v1/tags")
 def get_tags():
