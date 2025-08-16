@@ -48,6 +48,14 @@ def get_image(hash: str):
         return {"error": "Image not found."}
     return Response(content=image, media_type="image/png")
 
+@app.get("/api/v1/tags")
+def get_tags():
+    metadata_df = read_metadata_v2()
+    if metadata_df is None:
+        return {"error": "No images found."}
+    all_tags = set([tag.strip() for prompt in metadata_df["prompt"].astype(str).tolist() for tag in prompt.split(',')])
+    return all_tags
+
 @app.get("/api/v1/imagine")
 def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: int = 1024, num_inference_steps: int = 28, guidance_scale: float = 7.5, seed: int = None, batch_size: int = 1, inference_size: int = 1):
     """

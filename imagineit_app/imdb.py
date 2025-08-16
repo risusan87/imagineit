@@ -192,7 +192,7 @@ def write_v2(identity_hash: str, uncompressed_img: bytes=None, seed: int=None, p
             metadata_df.loc[target, 'labeled'] = labeled
         if label is not None:
             metadata_df.loc[target, 'label'] = label
-        # TODO mapper update
+        # TODO mapper update (Done)
         if uncompressed_img is not None:
             target_img = zlib.compress(uncompressed_img)
             mapper[new_metadata['identity']] = (mapper[new_metadata['identity']][0], len(target_img))
@@ -281,16 +281,18 @@ def img_metadata_v2(seed: int, prompt: str, negative_prompt: str, width: int, he
         prompt = ""
     if type(negative_prompt) is float:
         negative_prompt = ""
+    prompt = ",".join([tag.strip() for tag in prompt.split(",")])
+    negative_prompt = ",".join([tag.strip() for tag in negative_prompt.split(",")])
     img_metadata = {
         "seed": int(seed),
-        "prompt": prompt.replace(" ", "").replace("\t", "").replace("\n", ""),
-        "negative_prompt": negative_prompt.replace(" ", "").replace("\t", "").replace("\n", ""),
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
         "width": int(width),
         "height": int(height),
         "steps": int(steps),
         "guidance_scale": float(guidance_scale),
         "labeled": False,
-        "label": prompt.replace(" ", "").replace("\t", "").replace("\n", ""),
+        "label": prompt,
     }
     print(img_metadata)
     data_string = json.dumps({k:v for k, v in img_metadata.items() if k in ["seed", "prompt", "negative_prompt", "width", "height", "steps", "guidance_scale"]}, sort_keys=True, separators=(',', ':'))
