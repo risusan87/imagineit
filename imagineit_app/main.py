@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from pyngrok import ngrok
 # from imagineit_app.dataio import save_img, load_img_metadata, load_img
-from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2
+from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2, del_img_v2
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
 
 app = FastAPI()
@@ -47,6 +47,16 @@ def get_image(hash: str):
     if image is None:
         return {"error": "Image not found."}
     return Response(content=image, media_type="image/png")
+
+@app.delete("/api/v1/{hash}/image")
+def delete_image(hash: str):
+    """
+    Delete an image by its hash
+    """
+    success = del_img_v2(hash)
+    if not success:
+        return {"error": "Image not found."}
+    return {"status": "success"}
 
 @app.get("/api/v1/{hash}/prompt")
 def get_prompt(hash: str):

@@ -246,6 +246,61 @@ def read_img_v2(identity_hash: str):
             mapper_bytes.read(16)
     return None
 
+def del_img_v2(identity_hash: str):
+    with open(IMDB_PATH, "rb") as f:
+        mapper_loc = int.from_bytes(f.read(8), "little", signed=False)
+        metadata_loc = int.from_bytes(f.read(8), "little", signed=False)
+        f.seek(mapper_loc)
+        mapper_buff = BytesIO(f.read(metadata_loc - mapper_loc))
+        f.seek(metadata_loc)
+        metadata_bytes = BytesIO(zlib.decompress(f.read()))
+    mapper = {}
+    for i in range(len(mapper_buff.getvalue()) // 64):
+        mapper_buff.seek(i * 64)
+        salt = bytes(mapper_buff.read(16)[::-1]).hex()
+        hash = bytes(mapper_buff.read(32)[::-1]).hex()
+        index = int.from_bytes(mapper_buff.read(8), "little", signed=False)
+        size = int.from_bytes(mapper_buff.read(8), "little", signed=False)
+        mapper[salt + "$" + hash] = (index, size)
+    metadata_df = pd.read_csv(metadata_bytes)
+    mapper_buff.close()
+    metadata_bytes.close()
+    if identity_hash not in mapper:
+        return False
+    img_loc, img_size = mapper.pop(identity_hash)
+    metadata_df = metadata_df[metadata_df['identity'] != identity_hash]
+    with open(IMDB_PATH, "r+b") as f:
+        f.seek(img_loc + img_size)
+        img_bytes = f.read(mapper_loc - (img_loc + img_size))
+        f.seek(img_loc)
+        f.write(img_bytes)
+        for key, (index, size) in mapper.items():
+            if index >= img_loc + img_size:
+                mapper[key] = (index - img_size, size)
+        mapper_loc -= img_size
+        f.seek(mapper_loc)
+        mapper_buffer = BytesIO()
+        for key, (index, size) in mapper.items():
+            salt, hash = key.split("$")
+            mapper_buffer.write(int.to_bytes(int(salt, 16), 16, "little", signed=False))
+            mapper_buffer.write(int.to_bytes(int(hash, 16), 32, "little", signed=False))
+            mapper_buffer.write(int.to_bytes(index, 8, "little", signed=False))
+            mapper_buffer.write(int.to_bytes(size, 8, "little", signed=False))
+        mapper_bytes = mapper_buffer.getvalue()
+        mapper_buffer.close()
+        f.write(mapper_bytes)
+        metadata_loc = mapper_loc + len(mapper_bytes)
+        f.seek(metadata_loc)
+        f.write(zlib.compress(metadata_df.to_csv(index=False).encode('utf-8')))
+        f.seek(0)
+        f.write(int.to_bytes(mapper_loc, 8, "little", signed=False))
+        f.write(int.to_bytes(metadata_loc, 8, "little", signed=False))
+    return True
+
+    
+
+        
+
 def read_metadata_v2() -> pd.DataFrame:
     with open(IMDB_PATH, "rb") as f:
         f.seek(8)

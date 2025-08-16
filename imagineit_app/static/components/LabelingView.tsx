@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchImageHashes, fetchImageById, submitLabel, fetchImageLabel, fetchImagePrompt } from '../services/geminiService';
+import { fetchImageHashes, fetchImageById, submitLabel, fetchImageLabel, fetchImagePrompt, deleteImage } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorDisplay from './ErrorDisplay';
 
@@ -41,6 +41,7 @@ const LabelingView: React.FC = () => {
 
     const [isFiltering, setIsFiltering] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [isLabelLoading, setIsLabelLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -157,7 +158,7 @@ const LabelingView: React.FC = () => {
     
     const handlePrev = () => {
         if (currentIndex > 0) {
-            setCurrentIndex(prev => prev - 1);
+            setCurrentIndex(prev => prev + 1);
         }
     };
     
@@ -203,7 +204,49 @@ const LabelingView: React.FC = () => {
         }
     };
     
-    const isNavDisabled = isSubmitting || isFiltering;
+    const handleDelete = async () => {
+        if (!currentHash || isSubmitting || isDeleting) return;
+
+        if (!window.confirm('Are you sure you want to permanently delete this image? This action cannot be undone.')) {
+            return;
+        }
+
+        setIsDeleting(true);
+        setError(null);
+        try {
+            await deleteImage(currentHash);
+            
+            // Clean up the blob URL for the deleted image
+            const urlToDelete = loadedImages.get(currentHash);
+            if (urlToDelete && urlToDelete.startsWith('blob:')) {
+                URL.revokeObjectURL(urlToDelete);
+            }
+
+            // Remove deleted image from list and update state
+            const newHashes = imageHashes.filter(hash => hash !== currentHash);
+            
+            setLoadedImages(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(currentHash);
+                return newMap;
+            });
+            setImageHashes(newHashes);
+            
+            if (currentIndex >= newHashes.length && newHashes.length > 0) {
+                setCurrentIndex(newHashes.length - 1);
+            }
+            
+            setLabelPrompt('');
+
+        } catch (err) {
+            if (err instanceof Error) setError(err.message);
+            else setError('An unknown error occurred while deleting the image.');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const isNavDisabled = isSubmitting || isFiltering || isDeleting;
 
     return (
         <div className="flex flex-col lg:flex-row gap-8">
@@ -248,12 +291,15 @@ const LabelingView: React.FC = () => {
                                         value={labelPrompt} 
                                         onChange={(e) => setLabelPrompt(e.target.value)} 
                                         placeholder={isLabelLoading ? "Loading label..." : "Describe the image content..."} 
-                                        disabled={isSubmitting || isLabelLoading}
+                                        disabled={isSubmitting || isLabelLoading || isDeleting}
                                     />
                                 </div>
                             </div>
-                             <button onClick={handleSubmit} disabled={isSubmitting || !labelPrompt.trim() || isLabelLoading} className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                             <button onClick={handleSubmit} disabled={isSubmitting || !labelPrompt.trim() || isLabelLoading || isDeleting} className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
                                 {isSubmitting ? 'Submitting...' : 'Submit & Next'}
+                            </button>
+                             <button onClick={handleDelete} disabled={isSubmitting || isDeleting || isLabelLoading} className="w-full mt-2 bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                                {isDeleting ? 'Removing...' : 'Remove Image'}
                             </button>
                         </div>
                     )}

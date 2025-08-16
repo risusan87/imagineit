@@ -264,3 +264,38 @@ export const submitLabel = async (id: string, label: string): Promise<void> => {
         throw error;
     }
 };
+
+/**
+ * Deletes an image from the backend.
+ * @param hash The hash ID of the image to delete.
+ */
+export const deleteImage = async (hash: string): Promise<void> => {
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/${hash}/image`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'DELETE',
+        });
+
+        if (!response.ok) {
+            let errorMessage = `API request failed with status ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.detail || errorData.error || errorMessage;
+            } catch (e) {
+                // Ignore if response body is not JSON or empty
+            }
+            throw new Error(errorMessage);
+        }
+    } catch (error) {
+        console.error("Delete image failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error("An unknown error occurred during image deletion.");
+    }
+};
