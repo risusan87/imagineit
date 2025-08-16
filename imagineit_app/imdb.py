@@ -157,8 +157,8 @@ def write_v2(identity_hash: str, uncompressed_img: bytes=None, seed: int=None, p
     metadata_df = pd.read_csv(metadata_bytes)
     mapper_buff.close()
     metadata_bytes.close()
-    target = None if identity_hash is None else metadata_df[metadata_df['identity'] == identity_hash]
-    target_metadata = None if identity_hash is None else metadata_df[target]
+    target = None if identity_hash is None else (metadata_df['identity'] == identity_hash)
+    target_metadata = None if target is None else metadata_df[target]
     if target_metadata is None:
         if uncompressed_img is None or seed is None or prompt is None or negative_prompt is None or width is None or height is None or steps is None or guidance_scale is None:
             raise ValueError("All parameters must be provided when adding new image")
