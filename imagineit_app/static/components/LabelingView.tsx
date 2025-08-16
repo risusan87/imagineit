@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchImageHashes, fetchImageById, submitLabel, fetchImageLabel, fetchImagePrompt, deleteImage } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
@@ -31,8 +32,13 @@ const LabelingView: React.FC = () => {
     });
 
     const [imageHashes, setImageHashes] = useState<string[]>([]);
-    const [loadedImages, setLoadedImages] = useState<Map<string, string>>(new Map());
-    const [fetchingImages, setFetchingImages] = useState<Set<string>>(new Set());
+    // Caches for different image resolutions
+    const [thumbnailCache, setThumbnailCache] = useState<Map<string, string>>(new Map());
+    const [fullImageCache, setFullImageCache] = useState<Map<string, string>>(new Map());
+
+    // State to track fetching status
+    const [fetchingThumbnails, setFetchingThumbnails] = useState<Set<string>>(new Set());
+    const [fetchingFullImage, setFetchingFullImage] = useState<string | null>(null);
     
     const [currentIndex, setCurrentIndex] = useState<number>(0);
     const [filterApplied, setFilterApplied] = useState(false);
@@ -45,14 +51,17 @@ const LabelingView: React.FC = () => {
     const [isLabelLoading, setIsLabelLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const loadedImagesRef = useRef(loadedImages);
-    loadedImagesRef.current = loadedImages;
+    const thumbnailCacheRef = useRef(thumbnailCache);
+    thumbnailCacheRef.current = thumbnailCache;
+    const fullImageCacheRef = useRef(fullImageCache);
+    fullImageCacheRef.current = fullImageCache;
 
     // Clean up all blob URLs on unmount to prevent memory leaks
     useEffect(() => {
         return () => {
-            const urlsToClean = Array.from(loadedImagesRef.current.values());
-            urlsToClean.forEach(url => {
+            const thumbUrls = Array.from(thumbnailCacheRef.current.values());
+            const fullUrls = Array.from(fullImageCacheRef.current.values());
+            [...thumbUrls, ...fullUrls].forEach(url => {
                 if (url && url.startsWith('blob:')) {
                     URL.revokeObjectURL(url);
                 }
@@ -89,29 +98,27 @@ const LabelingView: React.FC = () => {
         loadLabel();
     }, [currentHash]);
 
-    // Pre-fetch images for the current view and filmstrip
+    // Pre-fetch low-res thumbnails for the filmstrip window
     useEffect(() => {
         if (imageHashes.length === 0) return;
 
-        // Fetch images for a window around the current index for the filmstrip
         const FILMSTRIP_RADIUS = 5;
         const start = Math.max(0, currentIndex - FILMSTRIP_RADIUS);
         const end = Math.min(imageHashes.length, currentIndex + FILMSTRIP_RADIUS + 1);
 
         for (let i = start; i < end; i++) {
             const hash = imageHashes[i];
-            if (hash && !loadedImages.has(hash) && !fetchingImages.has(hash)) {
-                setFetchingImages(prev => new Set(prev).add(hash));
-                fetchImageById(hash)
+            if (hash && !thumbnailCache.has(hash) && !fetchingThumbnails.has(hash)) {
+                setFetchingThumbnails(prev => new Set(prev).add(hash));
+                fetchImageById(hash, 4) // level 4 for small thumbnails
                     .then(url => {
-                        setLoadedImages(prev => new Map(prev).set(hash, url));
+                        setThumbnailCache(prev => new Map(prev).set(hash, url));
                     })
                     .catch(err => {
-                        console.error(`Failed to fetch image ${hash}:`, err);
-                        // Optionally set an error state for this specific image
+                        console.error(`Failed to fetch thumbnail ${hash}:`, err);
                     })
                     .finally(() => {
-                        setFetchingImages(prev => {
+                        setFetchingThumbnails(prev => {
                             const newSet = new Set(prev);
                             newSet.delete(hash);
                             return newSet;
@@ -119,7 +126,25 @@ const LabelingView: React.FC = () => {
                     });
             }
         }
-    }, [currentIndex, imageHashes, loadedImages, fetchingImages]);
+    }, [currentIndex, imageHashes, thumbnailCache, fetchingThumbnails]);
+    
+    // Fetch the full-resolution image for the current view
+    useEffect(() => {
+        if (currentHash && !fullImageCache.has(currentHash) && fetchingFullImage !== currentHash) {
+            setFetchingFullImage(currentHash);
+            fetchImageById(currentHash, 0) // level 0 for full resolution
+                .then(url => {
+                    setFullImageCache(prev => new Map(prev).set(currentHash, url));
+                })
+                .catch(err => {
+                    console.error(`Failed to fetch full image ${currentHash}:`, err);
+                })
+                .finally(() => {
+                    setFetchingFullImage(null);
+                });
+        }
+    }, [currentHash, fullImageCache, fetchingFullImage]);
+
 
     const handleFilterChange = (field: keyof FilterState, value: string | boolean) => {
         setFilters(prev => ({ ...prev, [field]: value }));
@@ -158,12 +183,14 @@ const LabelingView: React.FC = () => {
     
     const handlePrev = () => {
         if (currentIndex > 0) {
-            setCurrentIndex(prev => prev + 1);
+            setCurrentIndex(prev => prev - 1);
         }
     };
     
-    const currentUrl = currentHash ? loadedImages.get(currentHash) : null;
-    const isCurrentImageLoading = currentHash ? fetchingImages.has(currentHash) || !currentUrl : false;
+    const thumbUrl = currentHash ? thumbnailCache.get(currentHash) : null;
+    const fullUrl = currentHash ? fullImageCache.get(currentHash) : null;
+    const currentUrl = fullUrl || thumbUrl;
+    const isCurrentImageLoading = currentHash ? !currentUrl && (fetchingThumbnails.has(currentHash) || fetchingFullImage === currentHash) : false;
 
 
     const handleSubmit = async () => {
@@ -174,16 +201,20 @@ const LabelingView: React.FC = () => {
         try {
             await submitLabel(currentHash, labelPrompt);
             
-            // Clean up the blob URL for the submitted image
-            const urlToDelete = loadedImages.get(currentHash);
-            if (urlToDelete && urlToDelete.startsWith('blob:')) {
-                URL.revokeObjectURL(urlToDelete);
-            }
+            // Clean up blob URLs and remove image from state
+            const thumbUrlToDelete = thumbnailCache.get(currentHash);
+            if (thumbUrlToDelete && thumbUrlToDelete.startsWith('blob:')) URL.revokeObjectURL(thumbUrlToDelete);
+            const fullUrlToDelete = fullImageCache.get(currentHash);
+            if (fullUrlToDelete && fullUrlToDelete.startsWith('blob:')) URL.revokeObjectURL(fullUrlToDelete);
 
-            // Remove submitted image from list and update state
             const newHashes = imageHashes.filter(hash => hash !== currentHash);
             
-            setLoadedImages(prev => {
+            setThumbnailCache(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(currentHash);
+                return newMap;
+            });
+            setFullImageCache(prev => {
                 const newMap = new Map(prev);
                 newMap.delete(currentHash);
                 return newMap;
@@ -216,16 +247,20 @@ const LabelingView: React.FC = () => {
         try {
             await deleteImage(currentHash);
             
-            // Clean up the blob URL for the deleted image
-            const urlToDelete = loadedImages.get(currentHash);
-            if (urlToDelete && urlToDelete.startsWith('blob:')) {
-                URL.revokeObjectURL(urlToDelete);
-            }
+            // Clean up blob URLs and remove image from state
+            const thumbUrlToDelete = thumbnailCache.get(currentHash);
+            if (thumbUrlToDelete && thumbUrlToDelete.startsWith('blob:')) URL.revokeObjectURL(thumbUrlToDelete);
+            const fullUrlToDelete = fullImageCache.get(currentHash);
+            if (fullUrlToDelete && fullUrlToDelete.startsWith('blob:')) URL.revokeObjectURL(fullUrlToDelete);
 
-            // Remove deleted image from list and update state
             const newHashes = imageHashes.filter(hash => hash !== currentHash);
             
-            setLoadedImages(prev => {
+            setThumbnailCache(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(currentHash);
+                return newMap;
+            });
+            setFullImageCache(prev => {
                 const newMap = new Map(prev);
                 newMap.delete(currentHash);
                 return newMap;
@@ -324,7 +359,7 @@ const LabelingView: React.FC = () => {
                                         <img 
                                             src={currentUrl || ''} 
                                             alt={`Labeling target ${currentHash}`} 
-                                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                                            className="w-full h-full object-fill rounded-lg shadow-2xl"
                                         />
                                     )}
                                 </div>
@@ -348,8 +383,8 @@ const LabelingView: React.FC = () => {
                 {filterApplied && imageHashes.length > 0 && !isFiltering && (
                    <Filmstrip
                         imageHashes={imageHashes}
-                        loadedImages={loadedImages}
-                        fetchingImages={fetchingImages}
+                        loadedImages={thumbnailCache}
+                        fetchingImages={fetchingThumbnails}
                         currentIndex={currentIndex}
                         setCurrentIndex={setCurrentIndex}
                     />
