@@ -149,11 +149,11 @@ def write_v2(identity_hash: str, uncompressed_img: bytes=None, seed: int=None, p
     mapper = {}
     for i in range(len(mapper_buff.getvalue()) // 64):
         mapper_buff.seek(i * 64)
-        salt = hex(int.from_bytes(mapper_buff.read(16), "little", signed=False))
-        hash = hex(int.from_bytes(mapper_buff.read(32), "little", signed=False))
+        salt = bytes(mapper_buff.read(16)[::-1]).hex()
+        hash = bytes(mapper_buff.read(32)[::-1]).hex()
         index = int.from_bytes(mapper_buff.read(8), "little", signed=False)
         size = int.from_bytes(mapper_buff.read(8), "little", signed=False)
-        mapper[salt[2:] + "$" + hash[2:]] = (index, size)
+        mapper[salt + "$" + hash] = (index, size)
     metadata_df = pd.read_csv(metadata_bytes)
     mapper_buff.close()
     metadata_bytes.close()
