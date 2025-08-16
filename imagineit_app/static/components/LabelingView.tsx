@@ -171,7 +171,7 @@ const LabelingView: React.FC = () => {
         setIsSubmitting(true);
         setError(null);
         try {
-            await submitLabel(currentHash, labelPrompt, '');
+            await submitLabel(currentHash, labelPrompt);
             
             // Clean up the blob URL for the submitted image
             const urlToDelete = loadedImages.get(currentHash);

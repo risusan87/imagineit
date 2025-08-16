@@ -68,6 +68,11 @@ def get_label(hash: str):
         return {"error": "Label not found."}
     return {"label": label.iloc[0]}
 
+@app.update("/api/v1/{hash}/label")
+def update_label(hash: str, label: str):
+    write_v2(hash, labeled=True, label=label)
+    return {"status": "success"}
+
 @app.get("/api/v1/tags")
 def get_tags():
     metadata_df = read_metadata_v2()

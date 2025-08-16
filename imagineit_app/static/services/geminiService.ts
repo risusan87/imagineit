@@ -234,23 +234,18 @@ export const fetchImagePrompt = async (hash: string): Promise<string> => {
 /**
  * Submits a label for an image to the backend.
  * @param id The ID of the image being labeled.
- * @param prompt The positive label prompt.
- * @param negativePrompt The negative label prompt.
+ * @param label The positive label prompt.
  */
-export const submitLabel = async (id: string, prompt: string, negativePrompt: string): Promise<void> => {
+export const submitLabel = async (id: string, label: string): Promise<void> => {
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/v1/label`;
+    const url = `${baseUrl}/api/v1/${id}/label`;
     try {
         const response = await fetch(url, {
-            method: 'POST',
+            method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                id,
-                prompt,
-                negative_prompt: negativePrompt
-            }),
+            body: JSON.stringify({ label }),
         });
 
         if (!response.ok) {
