@@ -155,11 +155,12 @@ export const fetchImageHashes = async (filters: ImageHashFilters): Promise<strin
 /**
  * Fetches a single image by its hash ID.
  * @param id The hash ID of the image.
+ * @param level The shrink level for the image (0 for full size).
  * @returns A promise that resolves to a blob URL of the image.
  */
-export const fetchImageById = async (id: string): Promise<string> => {
+export const fetchImageById = async (id: string, level: number = 0): Promise<string> => {
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/v1/${id}/image`;
+    const url = `${baseUrl}/api/v1/${id}/image?level=${level}`;
     try {
         const response = await fetch(url);
         if (!response.ok) {

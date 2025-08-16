@@ -6,6 +6,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 import zipfile
+from PIL import Image
 
 from fastapi import FastAPI
 from fastapi.responses import Response
@@ -41,15 +42,19 @@ def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative
     return metadata_df["identity"].tolist()
 
 @app.get("/api/v1/{hash}/image")
-def get_image(hash: str):
+def get_image_small(hash: str, level: int):
     """
-    Get an image by its hash
+    Get a small version of an image by its hash
     """
     image = read_img_v2(hash)
-    print(hash)
     if image is None:
         return {"error": "Image not found."}
-    return Response(content=image, media_type="image/png")
+    image = Image.open(BytesIO(image))
+    small_image = image.resize((image.width // (2 ** level), image.height // (2 ** level)), resample=Image.Resampling.LANCZOS)
+    buf = BytesIO()
+    small_image.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="image/png")
 
 @app.delete("/api/v1/{hash}/image")
 def delete_image(hash: str):
