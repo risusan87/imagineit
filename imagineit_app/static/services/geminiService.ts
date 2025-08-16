@@ -299,3 +299,75 @@ export const deleteImage = async (hash: string): Promise<void> => {
         throw new Error("An unknown error occurred during image deletion.");
     }
 };
+
+/**
+ * Converts an ArrayBuffer to a hexadecimal string.
+ * @param buffer The ArrayBuffer to convert.
+ * @returns The resulting hex string.
+ */
+const bufferToHex = (buffer: ArrayBuffer): string => {
+    return [...new Uint8Array(buffer)]
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+};
+
+/**
+ * Saves a trimmed image as training data to the backend.
+ * @param width The target width of the image.
+ * @param height The target height of the image.
+ * @param imageDataUrl The base64 data URL of the cropped image.
+ * @returns A promise that resolves to an object containing the new image's reference hash.
+ */
+export const saveTrainingImage = async (
+    width: number,
+    height: number,
+    imageDataUrl: string
+): Promise<{ reference: string }> => {
+    const baseUrl = getApiBaseUrl();
+
+    // Convert data URL to blob, then to ArrayBuffer, then to a hex string.
+    const responseBlob = await fetch(imageDataUrl);
+    const imageBlob = await responseBlob.blob();
+    const arrayBuffer = await imageBlob.arrayBuffer();
+    const hexImage = bufferToHex(arrayBuffer);
+
+    const params = new URLSearchParams({
+        width: String(width),
+        height: String(height),
+    });
+
+    const url = `${baseUrl}/api/v1/train/image?${params.toString()}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ image: hexImage }),
+        });
+
+        if (!response.ok) {
+            let errorMessage = `API request failed with status ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.detail || errorData.error || errorMessage;
+            } catch (e) {
+                // Ignore if response body is not JSON or empty
+            }
+            throw new Error(errorMessage);
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error("Save training image failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error("An unknown error occurred while saving the image.");
+    }
+};

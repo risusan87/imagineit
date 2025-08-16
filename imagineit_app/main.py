@@ -58,6 +58,16 @@ def delete_image(hash: str):
         return {"error": "Image not found."}
     return {"status": "success"}
 
+from pydantic import BaseModel
+class ImagePayload(BaseModel):
+    image: str
+
+@app.post("/api/v1/train/image")
+def post_image(width: int, height: int, image: ImagePayload):
+    image_bytes = bytes.fromhex(image.image)
+    hash = write_v2(None, image_bytes, -1, "<train_data>", "<train_data>", width, height, -1, -1.0)
+    return {"reference": hash}
+
 @app.get("/api/v1/{hash}/prompt")
 def get_prompt(hash: str):
     metadata_df = read_metadata_v2()

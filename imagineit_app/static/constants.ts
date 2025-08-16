@@ -67,3 +67,6 @@ export const COOKIE_ALWAYS_RANDOM_SEED = 'ai_studio_always_random_seed';
 // Cookie Keys for Backend Settings
 export const COOKIE_BACKEND_MODE = 'ai_studio_backend_mode';
 export const COOKIE_DEDICATED_DOMAIN = 'ai_studio_dedicated_domain';
+
+// Training Image Settings
+export const TRAINING_IMAGE_FORMAT = 'image/png';
