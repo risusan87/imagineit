@@ -297,9 +297,50 @@ def del_img_v2(identity_hash: str):
         f.write(int.to_bytes(metadata_loc, 8, "little", signed=False))
     return True
 
+def read_mapper_v2():
+    with open(IMDB_PATH, "rb") as f:
+        mapper_loc = int.from_bytes(f.read(8), "little", signed=False)
+        metadata_loc = int.from_bytes(f.read(8), "little", signed=False)
+        f.seek(mapper_loc)
+        mapper_bytes = f.read(metadata_loc - mapper_loc)
+        mapper = {}
+        for i in range(len(mapper_bytes) // 64):
+            base = i * 64
+            f.seek(mapper_loc + base)
+            salt = bytes(f.read(16)[::-1]).hex()
+            hash = bytes(f.read(32)[::-1]).hex()
+            index = int.from_bytes(f.read(8), "little", signed=False)
+            size = int.from_bytes(f.read(8), "little", signed=False)
+            mapper[salt + "$" + hash] = (index, size)
+        return mapper
     
+def select_idx_v2(indices: list[int]) -> list[str]:
+    mapper = read_mapper_v2()
+    indexed_mapper = [m[0] for i, m in enumerate(sorted(mapper.items(), key=lambda item: item[1][0])) if i in indices]
+    return indexed_mapper
 
-        
+def export_v2(dst_folder_path: str, hash_list: list[str]=None):
+    if not os.path.exists(dst_folder_path):
+        os.makedirs(dst_folder_path)
+    metadata_df = read_metadata_v2()
+    if hash_list is None:
+        hash_list = metadata_df['identity'].astype(str).tolist()
+    imgs = {}
+    for hash in hash_list:
+        img = read_img_v2(hash)
+        if img is None:
+            print("Image not found for hash:", hash)
+            continue
+        imgs[hash] = img
+    export_metadata_df = metadata_df[metadata_df['identity'].isin(imgs.keys())]
+    for hash, img in imgs.items():
+        with open(os.path.join(dst_folder_path, f"{hash}.png"), "wb") as f:
+            f.write(img)
+    with open(os.path.join(dst_folder_path, "metadata.csv"), "w") as f:
+        f.write(export_metadata_df.to_csv(index=False))
+
+def concat_imdb_v2():
+    raise NotImplementedError
 
 def read_metadata_v2() -> pd.DataFrame:
     with open(IMDB_PATH, "rb") as f:
@@ -427,3 +468,6 @@ def img_metadata_v2(seed: int, prompt: str, negative_prompt: str, width: int, he
 # for h in hashes:
 #     img = read_img_v2(h)
 #     print(img is not None)
+
+indx = select_idx_v2([0, 1, 2])
+export_v2("test_export", indx)
