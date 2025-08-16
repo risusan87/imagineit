@@ -65,7 +65,7 @@ const ExportView: React.FC = () => {
     useEffect(() => {
         imageHashes.forEach(hash => {
             if (!loadedImages.has(hash)) {
-                fetchImageById(hash)
+                fetchImageById(hash, 3) // Use level 3 for smaller thumbnails in the grid
                     .then(url => setLoadedImages(prev => new Map(prev).set(hash, url)))
                     .catch(err => console.error(`Failed to load image ${hash}`, err));
             }
