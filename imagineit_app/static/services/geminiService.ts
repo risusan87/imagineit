@@ -196,7 +196,8 @@ export const fetchImageLabel = async (hash: string): Promise<string> => {
             }
             throw new Error(`Failed to fetch label with status ${response.status}`);
         }
-        return await response.text();
+        const data = await response.json();
+        return data.label || '';
     } catch (error) {
         console.error(`Fetch image label for ${hash} failed:`, error);
         if (error instanceof TypeError) {
@@ -219,7 +220,8 @@ export const fetchImagePrompt = async (hash: string): Promise<string> => {
         if (!response.ok) {
             throw new Error(`Failed to fetch prompt with status ${response.status}`);
         }
-        return await response.text();
+        const data = await response.json();
+        return data.prompt || '';
     } catch (error) {
         console.error(`Fetch image prompt for ${hash} failed:`, error);
         if (error instanceof TypeError) {
