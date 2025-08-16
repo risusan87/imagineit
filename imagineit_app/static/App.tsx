@@ -15,6 +15,7 @@ import Tabs, { Tab } from './components/Tabs';
 import LabelingView from './components/LabelingView';
 import TrainView from './components/TrainView';
 import { getCookie, setCookie } from './utils/cookies';
+import ExportView from './components/ExportView';
 
 // Helper to get a number from a cookie or return a default value.
 const getNumberFromCookie = (cookieName: string, defaultValue: number): number => {
@@ -187,6 +188,7 @@ const App: React.FC = () => {
                     )}
                     {activeTab === 'label' && <LabelingView />}
                     {activeTab === 'train' && <TrainView />}
+                    {activeTab === 'export' && <ExportView />}
                 </div>
             </main>
         </div>

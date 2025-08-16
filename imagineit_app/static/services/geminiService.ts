@@ -1,3 +1,4 @@
+
 import { getCookie } from '../utils/cookies';
 import { COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN } from '../constants';
 
@@ -369,5 +370,91 @@ export const saveTrainingImage = async (
             throw error;
         }
         throw new Error("An unknown error occurred while saving the image.");
+    }
+};
+
+/**
+ * Converts a hex string to an ArrayBuffer.
+ * @param hex The hex string to convert.
+ * @returns The resulting ArrayBuffer.
+ */
+const hexToArrayBuffer = (hex: string): ArrayBuffer => {
+    if (hex.length % 2 !== 0) {
+        throw new Error('Hex string must have an even number of characters');
+    }
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+        bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+    }
+    return bytes.buffer;
+};
+
+
+/**
+ * Requests the backend to create a zip archive of specified images.
+ * @param collectionName The name for the export collection.
+ * @param isTrainingData Flag indicating if the data is for training.
+ * @param imageHashes An array of image hashes to include in the zip.
+ * @param returnFile Flag indicating if the zip file should be returned in the response.
+ * @returns A promise that resolves to an object containing the status and an optional file URL.
+ */
+export const createZipFile = async (
+    collectionName: string,
+    isTrainingData: boolean,
+    imageHashes: string[],
+    returnFile: boolean
+): Promise<{ status: string; fileUrl?: string }> => {
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/zipfile`;
+
+    const payload = {
+        zip_file_name: collectionName,
+        is_train_data: isTrainingData,
+        img_hashes: imageHashes,
+        return_file: returnFile,
+    };
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const responseData = await response.json();
+
+        if (!response.ok) {
+            let errorMessage = `API request failed with status ${response.status}`;
+            errorMessage = responseData.detail || errorMessage;
+            throw new Error(errorMessage);
+        }
+        
+        if (responseData.status !== 'success') {
+            throw new Error('API returned a non-success status.');
+        }
+
+        if (returnFile) {
+            if (!responseData.file || typeof responseData.file !== 'string') {
+                throw new Error('API was expected to return a file, but did not.');
+            }
+            const arrayBuffer = hexToArrayBuffer(responseData.file);
+            const blob = new Blob([arrayBuffer], { type: 'application/zip' });
+            const fileUrl = URL.createObjectURL(blob);
+            return { status: 'success', fileUrl };
+        }
+
+        return { status: 'success' };
+
+    } catch (error) {
+        console.error("Create zip file failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error("An unknown error occurred during zip file creation.");
     }
 };
