@@ -153,7 +153,7 @@ def write_v2(identity_hash: str, uncompressed_img: bytes=None, seed: int=None, p
         hash = hex(int.from_bytes(mapper_buff.read(32), "little", signed=False))
         index = int.from_bytes(mapper_buff.read(8), "little", signed=False)
         size = int.from_bytes(mapper_buff.read(8), "little", signed=False)
-        mapper[salt + "$" + hash] = (index, size)
+        mapper[salt[2:] + "$" + hash[2:]] = (index, size)
     metadata_df = pd.read_csv(metadata_bytes)
     mapper_buff.close()
     metadata_bytes.close()
@@ -184,15 +184,16 @@ def write_v2(identity_hash: str, uncompressed_img: bytes=None, seed: int=None, p
             metadata_df.loc[target, 'steps'] = steps
         if guidance_scale is not None:
             metadata_df.loc[target, 'guidance_scale'] = guidance_scale
-        new_metadata = img_metadata_v2(**metadata_df.loc[target, ['seed', 'prompt', 'negative_prompt', 'width', 'height', 'steps', 'guidance_scale']])
+        new_metadata = img_metadata_v2(**metadata_df.loc[target, ['seed', 'prompt', 'negative_prompt', 'width', 'height', 'steps', 'guidance_scale']].iloc[0].to_dict())
         if not identity_hash_validation_v2(identity_hash.split('$')[1], new_metadata['identity']):
-            mapper[new_metadata['identity']] = mapper.pop(target_metadata['identity'])
+            mapper[new_metadata['identity']] = mapper.pop(target_metadata['identity'].iloc[0])
             metadata_df.loc[target, 'identity'] = new_metadata['identity']
         if labeled is not None:
             metadata_df.loc[target, 'labeled'] = labeled
         if label is not None:
             metadata_df.loc[target, 'label'] = label
         # TODO mapper update (Done)
+        target_img = None
         if uncompressed_img is not None:
             target_img = zlib.compress(uncompressed_img)
             mapper[new_metadata['identity']] = (mapper[new_metadata['identity']][0], len(target_img))
