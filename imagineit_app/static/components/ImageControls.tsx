@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
     MIN_STEPS, MAX_STEPS, 
     MIN_GUIDANCE, MAX_GUIDANCE, 
@@ -6,12 +6,15 @@ import {
     DEFAULT_WIDTH, DEFAULT_HEIGHT, DIMENSION_STEP,
     PREDEFINED_ASPECT_RATIOS
 } from '../constants';
+import { mountLora } from '../services/geminiService';
 
 interface ImageControlsProps {
     prompt: string;
     setPrompt: (prompt: string) => void;
     negativePrompt: string;
     setNegativePrompt: (prompt: string) => void;
+    loraModel: string;
+    setLoraModel: (lora: string) => void;
     width: number | '';
     setWidth: (width: number | '') => void;
     height: number | '';
@@ -76,7 +79,8 @@ const AspectRatioVisualizer: React.FC<{ width: number | ''; height: number | '' 
 
 const ImageControls: React.FC<ImageControlsProps> = ({ 
     prompt, setPrompt, 
-    negativePrompt, setNegativePrompt, 
+    negativePrompt, setNegativePrompt,
+    loraModel, setLoraModel,
     width, setWidth,
     height, setHeight,
     seed, setSeed, 
@@ -88,6 +92,9 @@ const ImageControls: React.FC<ImageControlsProps> = ({
     isLoading, onGenerate 
 }) => {
     
+    const [loraLoadState, setLoraLoadState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+    const [loraError, setLoraError] = useState<string | null>(null);
+
     const isMultiImage = Number(batchSize) > 1 || Number(inferenceCount) > 1;
 
     const handleRandomSeed = () => {
@@ -143,6 +150,26 @@ const ImageControls: React.FC<ImageControlsProps> = ({
         setter(validatedNum);
     };
     
+    const handleLoadLora = async () => {
+        if (!loraModel.trim() || loraLoadState === 'loading') return;
+
+        setLoraLoadState('loading');
+        setLoraError(null);
+
+        try {
+            await mountLora(loraModel);
+            setLoraLoadState('success');
+            setTimeout(() => setLoraLoadState('idle'), 3000); // Reset after 3s
+        } catch (err) {
+            setLoraLoadState('error');
+            if (err instanceof Error) {
+                setLoraError(err.message);
+            } else {
+                setLoraError('An unknown error occurred.');
+            }
+        }
+    };
+
     return (
         <div className="bg-gray-800/50 p-6 rounded-2xl shadow-lg flex flex-col h-full sticky top-8">
             <div className="space-y-6 flex-grow">
@@ -173,6 +200,38 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                         placeholder="e.g., blurry, text, watermark, disfigured"
                         disabled={isLoading}
                     />
+                </div>
+
+                <div>
+                    <label htmlFor="lora-model" className="block text-sm font-medium text-gray-300 mb-2">
+                        LoRA Model <span className="text-gray-400">(optional)</span>
+                    </label>
+                    <div className="flex items-start gap-2">
+                        <input
+                            id="lora-model"
+                            type="text"
+                            className="flex-grow w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
+                            value={loraModel}
+                            onChange={(e) => {
+                                setLoraModel(e.target.value);
+                                setLoraLoadState('idle'); // Reset state on change
+                            }}
+                            placeholder="e.g., character_style_v1"
+                            disabled={isLoading}
+                        />
+                        <button
+                            onClick={handleLoadLora}
+                            disabled={isLoading || !loraModel.trim() || loraLoadState === 'loading'}
+                            className="px-4 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex-shrink-0"
+                            aria-label="Load LoRA model"
+                        >
+                           {loraLoadState === 'loading' ? '...' : 'Load'}
+                        </button>
+                    </div>
+                     <div className="text-xs mt-2 h-4">
+                        {loraLoadState === 'success' && <p className="text-green-400">LoRA loaded successfully!</p>}
+                        {loraLoadState === 'error' && <p className="text-red-400">{loraError}</p>}
+                    </div>
                 </div>
 
                  <div>
