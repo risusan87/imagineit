@@ -14,6 +14,7 @@ from pydantic import BaseModel
 # from imagineit_app.dataio import save_img, load_img_metadata, load_img
 from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2, del_img_v2, read_mapper_v2
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
+from imagineit_app.inference import img_inference, load_model
 
 app = FastAPI()
 
@@ -154,7 +155,6 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
     """
     endpoint for image inference
     """
-    from imagineit_app.inference import img_inference
     image_hashes = []
     for _ in range(inference_size):
         image_bytes, seeds = img_inference(
@@ -171,6 +171,14 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
             hash = write_v2(None, img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
             image_hashes.append(hash)
     return image_hashes
+
+@app.get("/api/v1/lora-mount")
+def lora_mount(lora: str):
+    lora += ".safetensors"
+    if not os.path.exists(lora):
+        return {"error": "Lora file not found."}
+    load_model(lora)
+    return {"status": "success"}
 
 def main():
     """

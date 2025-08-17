@@ -5,7 +5,8 @@ import {
     COOKIE_PROMPT, COOKIE_NEGATIVE_PROMPT, COOKIE_WIDTH, COOKIE_HEIGHT,
     COOKIE_SEED, COOKIE_STEPS, COOKIE_GUIDANCE_SCALE, COOKIE_BATCH_SIZE,
     COOKIE_INFERENCE_COUNT, COOKIE_ACTIVE_TAB, COOKIE_EXPIRATION_DAYS,
-    COOKIE_ALWAYS_RANDOM_SEED, COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN
+    COOKIE_ALWAYS_RANDOM_SEED, COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN,
+    COOKIE_LORA_MODEL
 } from './constants';
 import { generateImage } from './services/geminiService';
 import Header from './components/Header';
@@ -46,6 +47,7 @@ const App: React.FC = () => {
     // State for Inference Tab, initialized from cookies with fallbacks.
     const [prompt, setPrompt] = useState<string>(() => getCookie(COOKIE_PROMPT) || '');
     const [negativePrompt, setNegativePrompt] = useState<string>(() => getCookie(COOKIE_NEGATIVE_PROMPT) || '');
+    const [loraModel, setLoraModel] = useState<string>(() => getCookie(COOKIE_LORA_MODEL) || '');
     const [width, setWidth] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_WIDTH, DEFAULT_WIDTH));
     const [height, setHeight] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_HEIGHT, DEFAULT_HEIGHT));
     const [seed, setSeed] = useState<number | null>(() => {
@@ -77,6 +79,7 @@ const App: React.FC = () => {
     // Effects to save state to cookies on change.
     useEffect(() => { setCookie(COOKIE_PROMPT, prompt, COOKIE_EXPIRATION_DAYS); }, [prompt]);
     useEffect(() => { setCookie(COOKIE_NEGATIVE_PROMPT, negativePrompt, COOKIE_EXPIRATION_DAYS); }, [negativePrompt]);
+    useEffect(() => { setCookie(COOKIE_LORA_MODEL, loraModel, COOKIE_EXPIRATION_DAYS); }, [loraModel]);
     useEffect(() => { setCookie(COOKIE_WIDTH, String(width), COOKIE_EXPIRATION_DAYS); }, [width]);
     useEffect(() => { setCookie(COOKIE_HEIGHT, String(height), COOKIE_EXPIRATION_DAYS); }, [height]);
     useEffect(() => { setCookie(COOKIE_SEED, seed, COOKIE_EXPIRATION_DAYS); }, [seed]);
@@ -156,6 +159,8 @@ const App: React.FC = () => {
                                     setPrompt={setPrompt}
                                     negativePrompt={negativePrompt}
                                     setNegativePrompt={setNegativePrompt}
+                                    loraModel={loraModel}
+                                    setLoraModel={setLoraModel}
                                     width={width}
                                     setWidth={setWidth}
                                     height={height}

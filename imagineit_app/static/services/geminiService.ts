@@ -303,6 +303,44 @@ export const deleteImage = async (hash: string): Promise<void> => {
 };
 
 /**
+ * Mounts a LoRA model on the backend.
+ * @param lora The name of the LoRA model file (without extension).
+ * @returns A promise that resolves to an object with a success status.
+ */
+export const mountLora = async (lora: string): Promise<{ status: string }> => {
+    const baseUrl = getApiBaseUrl();
+    const params = new URLSearchParams({ lora });
+    const url = `${baseUrl}/api/v1/lora-mount?${params.toString()}`;
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            let errorMessage = `API request failed with status ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorMessage;
+            } catch (e) {
+                // Ignore if response is not JSON
+            }
+            throw new Error(errorMessage);
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error("Mount LoRA failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error("An unknown error occurred while mounting the LoRA model.");
+    }
+};
+
+/**
  * Converts an ArrayBuffer to a hexadecimal string.
  * @param buffer The ArrayBuffer to convert.
  * @returns The resulting hex string.
