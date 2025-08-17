@@ -165,7 +165,7 @@ const LabelingView: React.FC = () => {
                 exclude_filter_negative_prompt: '',
                 labeled: filters.labeled
             });
-            setImageHashes(hashes);
+            setImageHashes(hashes.reverse());
         } catch (err) {
             if (err instanceof Error) setError(err.message);
             else setError('An unknown error occurred while filtering images.');
