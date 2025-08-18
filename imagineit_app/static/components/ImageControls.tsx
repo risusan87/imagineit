@@ -36,9 +36,12 @@ interface ImageControlsProps {
 }
 
 const AspectRatioVisualizer: React.FC<{ width: number | ''; height: number | '' }> = ({ width, height }) => {
+    // A fixed-size container for the visualizer.
+    const containerClasses = "h-32 w-full bg-gray-900/50 rounded-lg flex items-center justify-center text-center text-gray-500 text-sm p-4 transition-all duration-300";
+
     if (width === '' || height === '' || +width === 0 || +height === 0) {
         return (
-            <div className="h-28 bg-gray-900/50 rounded-lg flex items-center justify-center text-center text-gray-500 text-sm p-4">
+            <div className={containerClasses}>
                 Select an aspect ratio or enter custom dimensions
             </div>
         );
@@ -47,31 +50,19 @@ const AspectRatioVisualizer: React.FC<{ width: number | ''; height: number | '' 
     const numericWidth = Number(width);
     const numericHeight = Number(height);
 
-    const containerSize = 96; // 6rem or 96px
-
-    let displayWidth, displayHeight;
-
-    // Calculate display dimensions to fit inside the square container
-    if (numericWidth > numericHeight) {
-        // Landscape or square
-        displayWidth = containerSize;
-        displayHeight = (numericHeight / numericWidth) * containerSize;
-    } else {
-        // Portrait
-        displayHeight = containerSize;
-        displayWidth = (numericWidth / numericHeight) * containerSize;
-    }
-
     return (
-        <div className="h-28 bg-gray-900/50 rounded-lg flex items-center justify-center p-2 transition-all duration-300">
+        <div className={containerClasses.replace('text-center text-gray-500 text-sm p-4', 'p-2')}>
+            {/* The inner visualizer has its aspect ratio set. */}
+            {/* `max-width` and `max-height` ensure it fits inside the container, simulating `object-contain`. */}
             <div
                 style={{
-                    width: `${displayWidth}px`,
-                    height: `${displayHeight}px`,
-                    transition: 'width 0.3s ease, height 0.3s ease',
+                    aspectRatio: `${numericWidth} / ${numericHeight}`,
+                    maxHeight: '100%',
+                    maxWidth: '100%',
+                    transition: 'all 0.3s ease-in-out',
                 }}
                 className="bg-purple-500/30 border-2 border-purple-400 rounded-md shadow-inner"
-            ></div>
+            />
         </div>
     );
 };

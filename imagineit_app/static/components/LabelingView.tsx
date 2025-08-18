@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchImageHashes, fetchImageById, submitLabel, fetchImageLabel, fetchImagePrompt, deleteImage } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
@@ -22,6 +23,47 @@ const LabeledViewPlaceholder: React.FC<{ message: string; subMessage?: string; }
     </div>
 );
 
+const ZoomedImageView: React.FC<{ imageUrl: string; alt: string; onClose: () => void; }> = ({ imageUrl, alt, onClose }) => {
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [onClose]);
+
+    return (
+        <div 
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 cursor-zoom-out"
+            onClick={onClose}
+            role="dialog"
+            aria-modal="true"
+        >
+            <div className="relative overflow-auto max-w-full max-h-full" onClick={(e) => e.stopPropagation()}>
+                <img 
+                    src={imageUrl} 
+                    alt={alt}
+                    className="block w-auto h-auto max-w-none max-h-none rounded-lg"
+                />
+            </div>
+             <button 
+                onClick={onClose} 
+                className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors focus:outline-none"
+                aria-label="Close zoomed view"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+    );
+};
+
+
 const LabelingView: React.FC = () => {
     const [filters, setFilters] = useState<FilterState>({
         includeFilterPrompt: '',
@@ -44,6 +86,7 @@ const LabelingView: React.FC = () => {
     const [filterApplied, setFilterApplied] = useState(false);
 
     const [labelPrompt, setLabelPrompt] = useState('');
+    const [isZoomed, setIsZoomed] = useState(false);
 
     const [isFiltering, setIsFiltering] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -128,22 +171,34 @@ const LabelingView: React.FC = () => {
         }
     }, [currentIndex, imageHashes, thumbnailCache, fetchingThumbnails]);
     
-    // Fetch the full-resolution image for the current view
+    // Fetch the full-resolution image for the current view with cancellation
     useEffect(() => {
-        if (currentHash && !fullImageCache.has(currentHash) && fetchingFullImage !== currentHash) {
-            setFetchingFullImage(currentHash);
-            fetchImageById(currentHash, 0) // level 0 for full resolution
-                .then(url => {
-                    setFullImageCache(prev => new Map(prev).set(currentHash, url));
-                })
-                .catch(err => {
-                    console.error(`Failed to fetch full image ${currentHash}:`, err);
-                })
-                .finally(() => {
-                    setFetchingFullImage(null);
-                });
+        if (!currentHash || fullImageCache.has(currentHash)) {
+            return;
         }
-    }, [currentHash, fullImageCache, fetchingFullImage]);
+
+        const abortController = new AbortController();
+
+        const fetchFullImage = async () => {
+            setFetchingFullImage(currentHash);
+            try {
+                const url = await fetchImageById(currentHash, 0, abortController.signal);
+                setFullImageCache(prev => new Map(prev).set(currentHash, url));
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error(`Failed to fetch full image ${currentHash}:`, err);
+                }
+            } finally {
+                setFetchingFullImage(prev => (prev === currentHash ? null : prev));
+            }
+        };
+
+        fetchFullImage();
+
+        return () => {
+            abortController.abort();
+        };
+    }, [currentHash, fullImageCache]);
 
 
     const handleFilterChange = (field: keyof FilterState, value: string | boolean) => {
@@ -190,7 +245,12 @@ const LabelingView: React.FC = () => {
     const thumbUrl = currentHash ? thumbnailCache.get(currentHash) : null;
     const fullUrl = currentHash ? fullImageCache.get(currentHash) : null;
     const currentUrl = fullUrl || thumbUrl;
-    const isCurrentImageLoading = currentHash ? !currentUrl && (fetchingThumbnails.has(currentHash) || fetchingFullImage === currentHash) : false;
+    
+    // The condition for showing the spinner is now simply if there's no image URL to display at all.
+    const showImageSpinner = currentHash && !currentUrl;
+    
+    // We also track if we are showing a thumbnail while the full resolution image is loading.
+    const isShowingThumbnailWhileLoadingFull = !!(currentHash && fetchingFullImage === currentHash && !fullUrl);
 
 
     const handleSubmit = async () => {
@@ -284,113 +344,132 @@ const LabelingView: React.FC = () => {
     const isNavDisabled = isSubmitting || isFiltering || isDeleting;
 
     return (
-        <div className="flex flex-col lg:flex-row gap-8">
-            {/* Left Column: Controls */}
-            <div className="w-full lg:w-1/3 lg:max-w-sm space-y-6">
-                <div className="bg-gray-800/50 p-6 rounded-2xl shadow-lg space-y-6 sticky top-8">
-                    <div>
-                        <h3 className="text-xl font-semibold text-white mb-4 border-b border-gray-700 pb-3">Filter Images</h3>
-                        <div className="space-y-4 pt-2">
-                             <FilterInput label="Search for prompt" value={filters.includeFilterPrompt} onChange={val => handleFilterChange('includeFilterPrompt', val)} disabled={isFiltering} />
-                             <div className="flex items-center pt-2">
-                                <input
-                                    type="checkbox"
-                                    id="labeled"
-                                    className="h-4 w-4 rounded border-gray-500 bg-gray-700 text-purple-500 focus:ring-purple-600 disabled:opacity-50"
-                                    checked={filters.labeled}
-                                    onChange={e => handleFilterChange('labeled', e.target.checked)}
-                                    disabled={isFiltering}
-                                />
-                                <label htmlFor="labeled" className="ml-2 text-sm font-medium text-gray-300">Show only labeled images</label>
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleApplyFilters}
-                            disabled={isFiltering}
-                            className="w-full mt-6 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-4 rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isFiltering ? 'Filtering...' : 'Apply Filters'}
-                        </button>
-                    </div>
-
-                    {currentHash && !isFiltering && (
+        <React.Fragment>
+            <div className="flex flex-col lg:flex-row gap-8">
+                {/* Left Column: Controls */}
+                <div className="w-full lg:w-1/3 lg:max-w-sm space-y-6">
+                    <div className="bg-gray-800/50 p-6 rounded-2xl shadow-lg space-y-6 sticky top-8">
                         <div>
-                             <h3 className="text-xl font-semibold text-white mb-4 border-b border-gray-700 pb-3">Annotate Image</h3>
-                              <div className="space-y-4 pt-2">
-                                <div>
-                                    <label htmlFor="label-prompt" className="block text-sm font-medium text-gray-300 mb-2">Label Prompt</label>
-                                    <textarea 
-                                        id="label-prompt" 
-                                        rows={4} 
-                                        className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50" 
-                                        value={labelPrompt} 
-                                        onChange={(e) => setLabelPrompt(e.target.value)} 
-                                        placeholder={isLabelLoading ? "Loading label..." : "Describe the image content..."} 
-                                        disabled={isSubmitting || isLabelLoading || isDeleting}
+                            <h3 className="text-xl font-semibold text-white mb-4 border-b border-gray-700 pb-3">Filter Images</h3>
+                            <div className="space-y-4 pt-2">
+                                <FilterInput label="Search for prompt" value={filters.includeFilterPrompt} onChange={val => handleFilterChange('includeFilterPrompt', val)} disabled={isFiltering} />
+                                <div className="flex items-center pt-2">
+                                    <input
+                                        type="checkbox"
+                                        id="labeled"
+                                        className="h-4 w-4 rounded border-gray-500 bg-gray-700 text-purple-500 focus:ring-purple-600 disabled:opacity-50"
+                                        checked={filters.labeled}
+                                        onChange={e => handleFilterChange('labeled', e.target.checked)}
+                                        disabled={isFiltering}
                                     />
+                                    <label htmlFor="labeled" className="ml-2 text-sm font-medium text-gray-300">Show only labeled images</label>
                                 </div>
                             </div>
-                             <button onClick={handleSubmit} disabled={isSubmitting || !labelPrompt.trim() || isLabelLoading || isDeleting} className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
-                                {isSubmitting ? 'Submitting...' : 'Submit & Next'}
-                            </button>
-                             <button onClick={handleDelete} disabled={isSubmitting || isDeleting || isLabelLoading} className="w-full mt-2 bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                                {isDeleting ? 'Removing...' : 'Remove Image'}
+                            <button
+                                onClick={handleApplyFilters}
+                                disabled={isFiltering}
+                                className="w-full mt-6 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-4 rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isFiltering ? 'Filtering...' : 'Apply Filters'}
                             </button>
                         </div>
-                    )}
-                </div>
-            </div>
 
-            {/* Right Column: Image Viewer */}
-            <div className="w-full lg:w-2/3 flex-1 bg-gray-800/50 rounded-2xl flex flex-col min-h-[550px] lg:h-[calc(100vh-4rem)] overflow-hidden lg:sticky lg:top-8">
-                <div className="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
-                    {error && <ErrorDisplay error={error} />}
-                    {!error && isFiltering && <LoadingSpinner />}
-                    {!error && !isFiltering && (
-                        <>
-                            {!filterApplied && <LabeledViewPlaceholder message="Filter to start labeling" subMessage="Use the controls to find images to annotate." />}
-                            {filterApplied && imageHashes.length === 0 && <LabeledViewPlaceholder message="No images match your criteria" subMessage="Try adjusting your filters." />}
-                            
-                            {currentHash && (
-                                <div className="w-full h-full flex items-center justify-center">
-                                    {isCurrentImageLoading ? (
-                                        <LoadingSpinner />
-                                    ) : (
-                                        <img 
-                                            src={currentUrl || ''} 
-                                            alt={`Labeling target ${currentHash}`} 
-                                            className="w-full h-full object-fill rounded-lg shadow-2xl"
+                        {currentHash && !isFiltering && (
+                            <div>
+                                <h3 className="text-xl font-semibold text-white mb-4 border-b border-gray-700 pb-3">Annotate Image</h3>
+                                <div className="space-y-4 pt-2">
+                                    <div>
+                                        <label htmlFor="label-prompt" className="block text-sm font-medium text-gray-300 mb-2">Label Prompt</label>
+                                        <textarea 
+                                            id="label-prompt" 
+                                            rows={4} 
+                                            className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50" 
+                                            value={labelPrompt} 
+                                            onChange={(e) => setLabelPrompt(e.target.value)} 
+                                            placeholder={isLabelLoading ? "Loading label..." : "Describe the image content..."} 
+                                            disabled={isSubmitting || isLabelLoading || isDeleting}
                                         />
-                                    )}
-                                </div>
-                            )}
-                            {imageHashes.length > 0 && (
-                                <>
-                                    <button onClick={handlePrev} disabled={currentIndex === 0 || isNavDisabled} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Previous Image">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                                    </button>
-                                    <button onClick={handleNext} disabled={currentIndex >= imageHashes.length - 1 || isNavDisabled} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Next Image">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                    </button>
-                                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-3 py-1 rounded-full">
-                                        {currentIndex + 1} / {imageHashes.length}
                                     </div>
-                                </>
-                            )}
-                        </>
+                                </div>
+                                <button onClick={handleSubmit} disabled={isSubmitting || !labelPrompt.trim() || isLabelLoading || isDeleting} className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {isSubmitting ? 'Submitting...' : 'Submit & Next'}
+                                </button>
+                                <button onClick={handleDelete} disabled={isSubmitting || isDeleting || isLabelLoading} className="w-full mt-2 bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                                    {isDeleting ? 'Removing...' : 'Remove Image'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Right Column: Image Viewer */}
+                <div className="w-full lg:w-2/3 flex-1 bg-gray-800/50 rounded-2xl flex flex-col min-h-[550px] lg:h-[calc(100vh-4rem)] overflow-hidden lg:sticky lg:top-8">
+                    <div className="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
+                        {error && <ErrorDisplay error={error} />}
+                        {!error && isFiltering && <LoadingSpinner />}
+                        {!error && !isFiltering && (
+                            <>
+                                {!filterApplied && <LabeledViewPlaceholder message="Filter to start labeling" subMessage="Use the controls to find images to annotate." />}
+                                {filterApplied && imageHashes.length === 0 && <LabeledViewPlaceholder message="No images match your criteria" subMessage="Try adjusting your filters." />}
+                                
+                                {currentHash && (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                        {showImageSpinner ? (
+                                            <LoadingSpinner />
+                                        ) : (
+                                            currentUrl && (
+                                                <button
+                                                    onClick={() => fullUrl && setIsZoomed(true)}
+                                                    disabled={!fullUrl}
+                                                    className="w-full h-full flex items-center justify-center cursor-zoom-in disabled:cursor-wait focus:outline-none rounded-lg"
+                                                    aria-label="Zoom in on image"
+                                                    title={fullUrl ? "Click to view full resolution" : "Loading full resolution image..."}
+                                                >
+                                                    <img 
+                                                        src={currentUrl} 
+                                                        alt={`Labeling target ${currentHash}`} 
+                                                        className={`w-full h-full object-contain rounded-lg shadow-2xl pointer-events-none transition-opacity duration-300 ${isShowingThumbnailWhileLoadingFull ? 'opacity-60' : 'opacity-100'}`}
+                                                    />
+                                                </button>
+                                            )
+                                        )}
+                                    </div>
+                                )}
+                                {imageHashes.length > 0 && (
+                                    <>
+                                        <button onClick={handlePrev} disabled={currentIndex === 0 || isNavDisabled} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Previous Image">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                                        </button>
+                                        <button onClick={handleNext} disabled={currentIndex >= imageHashes.length - 1 || isNavDisabled} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" aria-label="Next Image">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                        </button>
+                                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-3 py-1 rounded-full">
+                                            {currentIndex + 1} / {imageHashes.length}
+                                        </div>
+                                    </>
+                                )}
+                            </>
+                        )}
+                    </div>
+                    {filterApplied && imageHashes.length > 0 && !isFiltering && (
+                    <Filmstrip
+                            imageHashes={imageHashes}
+                            loadedImages={thumbnailCache}
+                            fetchingImages={fetchingThumbnails}
+                            currentIndex={currentIndex}
+                            setCurrentIndex={setCurrentIndex}
+                        />
                     )}
                 </div>
-                {filterApplied && imageHashes.length > 0 && !isFiltering && (
-                   <Filmstrip
-                        imageHashes={imageHashes}
-                        loadedImages={thumbnailCache}
-                        fetchingImages={fetchingThumbnails}
-                        currentIndex={currentIndex}
-                        setCurrentIndex={setCurrentIndex}
-                    />
-                )}
             </div>
-        </div>
+            {isZoomed && fullUrl && (
+                <ZoomedImageView 
+                    imageUrl={fullUrl} 
+                    alt={`Zoomed view of ${currentHash}`} 
+                    onClose={() => setIsZoomed(false)}
+                />
+            )}
+        </React.Fragment>
     );
 };
 

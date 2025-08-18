@@ -155,14 +155,15 @@ export const fetchImageHashes = async (filters: ImageHashFilters): Promise<strin
 /**
  * Fetches a single image by its hash ID.
  * @param id The hash ID of the image.
- * @param level The shrink level for the image (0 for full size).
+ * @param level The compression level for the image (0 for full size).
+ * @param signal An optional AbortSignal to cancel the request.
  * @returns A promise that resolves to a blob URL of the image.
  */
-export const fetchImageById = async (id: string, level: number = 0): Promise<string> => {
+export const fetchImageById = async (id: string, level: number = 0, signal?: AbortSignal): Promise<string> => {
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/v1/${id}/image?level=${level}`;
+    const url = `${baseUrl}/api/v1/images/${id}?compression_level=${level}`;
     try {
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         if (!response.ok) {
             throw new Error(`Failed to fetch image with status ${response.status}`);
         }
@@ -172,7 +173,11 @@ export const fetchImageById = async (id: string, level: number = 0): Promise<str
         }
         return URL.createObjectURL(imageBlob);
     } catch (error) {
-        console.error("Fetch image by ID failed:", error);
+        // Don't log AbortError as a failure, it's an expected cancellation.
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+            console.error("Fetch image by ID failed:", error);
+        }
+        
         if (error instanceof TypeError) {
              throw new Error(`Backend communication failed. Is the server running?`);
         }
