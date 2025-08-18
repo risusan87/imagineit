@@ -19,10 +19,6 @@ settings = {
 }
 gauth = GoogleAuth(settings=settings)
 gauth.CommandLineAuth()
-
-drive = GoogleDrive(gauth)
-gauth.CommandLineAuth()
-
 drive = GoogleDrive(gauth)
 # folder_name = "sd_images"
 file_name = os.environ["DB_NAME"] # imdb # imdb

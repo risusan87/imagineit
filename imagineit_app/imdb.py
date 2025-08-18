@@ -227,6 +227,8 @@ def write_v2(identity_hash: str, uncompressed_img: bytes=None, seed: int=None, p
     return identity_hash
 
 def read_img_v2(identity_hash: str):
+    if not "$" in identity_hash:
+        raise ValueError("Invalid identity_hash format: must contain '$' to separate salt and hash")
     identity_salt, target_hash = identity_hash.split("$")
     with open(IMDB_PATH, "rb") as f:
         mapper_loc = int.from_bytes(f.read(8), "little", signed=False)

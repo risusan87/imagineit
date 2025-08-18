@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { saveTrainingImage } from '../services/geminiService';
 import { TRAINING_IMAGE_FORMAT } from '../constants';
@@ -159,6 +160,46 @@ const TrainView: React.FC = () => {
             setCrop({ x: initialX, y: initialY, width: initialWidth, height: initialHeight });
         }
     }, [aspectRatio]);
+    
+    // Add paste event listener to load images from clipboard
+    useEffect(() => {
+        const handlePaste = (event: ClipboardEvent) => {
+            const items = event.clipboardData?.items;
+            if (!items) return;
+
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    const blob = item.getAsFile();
+                    if (blob) {
+                        event.preventDefault();
+                        
+                        // Clean up previous image if any
+                        if (loadedImageUrl) {
+                            URL.revokeObjectURL(loadedImageUrl);
+                        }
+                        
+                        // Reset states
+                        setIsLoading(false);
+                        setError(null);
+                        setCroppedImageUrl(null);
+                        setImageUrl(''); // Clear the URL input field
+                        
+                        const objectURL = URL.createObjectURL(blob);
+                        setLoadedImageUrl(objectURL);
+                        
+                        // Stop after handling the first image
+                        return;
+                    }
+                }
+            }
+        };
+
+        document.addEventListener('paste', handlePaste);
+        return () => {
+            document.removeEventListener('paste', handlePaste);
+        };
+    }, [loadedImageUrl]);
+
 
     useEffect(() => {
         resetCropToCenter();
@@ -280,6 +321,9 @@ const TrainView: React.FC = () => {
         <div className="space-y-8">
             <div className="bg-gray-800/50 p-6 rounded-2xl shadow-lg">
                 <h3 className="text-xl font-semibold text-white mb-4">1. Load Image</h3>
+                <p className="text-sm text-gray-400 mb-4">
+                    Enter an image URL below, or paste an image directly onto the page (Ctrl+V).
+                </p>
                 <div className="flex flex-col sm:flex-row gap-4 items-center">
                     <input
                         type="text"
@@ -291,10 +335,10 @@ const TrainView: React.FC = () => {
                     />
                     <button
                         onClick={handleLoadImage}
-                        disabled={isLoading}
+                        disabled={isLoading || !imageUrl.trim()}
                         className="w-full sm:w-auto bg-purple-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-purple-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {isLoading ? 'Loading...' : 'Load'}
+                        {isLoading ? 'Loading...' : 'Load from URL'}
                     </button>
                 </div>
                  {error && <p className="text-red-400 mt-4">{error}</p>}
