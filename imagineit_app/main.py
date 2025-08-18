@@ -11,17 +11,28 @@ from PIL import Image
 from fastapi import FastAPI
 from fastapi.responses import Response
 from pydantic import BaseModel
+
 # from imagineit_app.dataio import save_img, load_img_metadata, load_img
 from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2, del_img_v2, read_mapper_v2
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
 from imagineit_app.inference import img_inference, load_model
+from imagineit_app.resources import register_resources
 
 app = FastAPI()
+register_resources(app)
 
+###
+# Status
+###
 @app.get("/api/v1/status")
 def read_root():
     return {"status": "active"}
 
+
+
+###
+# hash list
+###
 @app.get("/api/v1/imghashlist")
 def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative_prompt: str=None, exclude_filter_prompt: str=None, exclude_filter_negative_prompt: str=None, labeled: bool=None):
     """
@@ -42,6 +53,11 @@ def get_unlabeled_image(include_filter_prompt: str=None, include_filter_negative
         metadata_df = metadata_df[metadata_df['labeled'] == labeled]
     return metadata_df["identity"].tolist()
 
+
+
+###
+# Image
+###
 @app.get("/api/v1/{hash}/image")
 def get_image_small(hash: str, level: int):
     """
@@ -149,28 +165,6 @@ def get_tags():
         return {"error": "No images found."}
     all_tags = set([tag.strip() for prompt in metadata_df["prompt"].astype(str).tolist() for tag in prompt.split(',')])
     return all_tags
-
-@app.get("/api/v1/imagine")
-def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: int = 1024, num_inference_steps: int = 28, guidance_scale: float = 7.5, seed: int = None, batch_size: int = 1, inference_size: int = 1):
-    """
-    endpoint for image inference
-    """
-    image_hashes = []
-    for _ in range(inference_size):
-        image_bytes, seeds = img_inference(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            width=width,
-            height=height,
-            steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            seed=seed if inference_size == 1 else int.from_bytes(os.urandom(8), signed=False),
-            batch_size=batch_size,
-        )
-        for img, seed in zip(image_bytes, seeds):
-            hash = write_v2(None, img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
-            image_hashes.append(hash)
-    return image_hashes
 
 @app.get("/api/v1/lora-mount")
 def lora_mount(lora: str):
