@@ -6,10 +6,12 @@ from io import BytesIO
 import json
 import hashlib
 import hmac
+import threading
 
 import pandas as pd
 
 IMDB_PATH = os.environ.get('IMDB_PATH', 'datav2.imdb')
+GLOBAL_DATABASE_THREAD_LOCK = threading.Lock()
 
 def metadata_size(f):
     f.seek(0)

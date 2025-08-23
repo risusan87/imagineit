@@ -68,6 +68,7 @@ const App: React.FC = () => {
     const [generatedImages, setGeneratedImages] = useState<string[] | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const [progress, setProgress] = useState<string | null>(null);
 
     // State for backend settings
     const [backendMode, setBackendMode] = useState<'combined' | 'dedicated'>(() => (getCookie(COOKIE_BACKEND_MODE) as 'combined' | 'dedicated') || 'combined');
@@ -111,6 +112,7 @@ const App: React.FC = () => {
         setIsLoading(true);
         setError(null);
         setGeneratedImages(null);
+        setProgress(null);
 
         const seedForGeneration = alwaysRandomSeed
             ? Math.floor(Math.random() * 2**32)
@@ -126,7 +128,8 @@ const App: React.FC = () => {
                 guidanceScale,
                 seedForGeneration,
                 batchSize || 1,
-                inferenceCount || 1
+                inferenceCount || 1,
+                setProgress
             );
             setGeneratedImages(imageUrls);
         } catch (err) {
@@ -137,6 +140,7 @@ const App: React.FC = () => {
             }
         } finally {
             setIsLoading(false);
+            setProgress(null);
         }
     }, [isLoading, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount, alwaysRandomSeed]);
 
@@ -187,6 +191,7 @@ const App: React.FC = () => {
                                     isLoading={isLoading}
                                     error={error}
                                     prompt={prompt}
+                                    progress={progress}
                                 />
                             </div>
                         </div>

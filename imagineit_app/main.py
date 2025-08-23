@@ -15,8 +15,8 @@ from pydantic import BaseModel
 # from imagineit_app.dataio import save_img, load_img_metadata, load_img
 from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2, del_img_v2, read_mapper_v2
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
-from imagineit_app.inference import img_inference, load_model
 from imagineit_app.resources import register_resources
+
 
 app = FastAPI()
 register_resources(app)
@@ -167,13 +167,14 @@ def get_tags():
     return all_tags
 
 @app.get("/api/v1/imagine")
-def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: int = 1024, num_inference_steps: int = 28, guidance_scale: float = 7.5, seed: int = None, batch_size: int = 1, inference_size: int = 1):
+def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_inference_steps: int, guidance_scale: float, seed: int, inference_size: int):
     """
     endpoint for image inference
     """
-    image_hashes = []
+    from imagineit_app.inference import MODEL
+    references = []
     for _ in range(inference_size):
-        image_bytes, seeds = img_inference(
+        reference = MODEL.img_inference(
             prompt=prompt,
             negative_prompt=negative_prompt,
             width=width,
@@ -181,19 +182,24 @@ def imagine(prompt: str, negative_prompt: str = "", width: int = 1024, height: i
             steps=num_inference_steps,
             guidance_scale=guidance_scale,
             seed=seed if inference_size == 1 else int.from_bytes(os.urandom(8), signed=False),
-            batch_size=batch_size,
         )
-        for img, seed in zip(image_bytes, seeds):
-            hash = write_v2(None, img, seed, prompt, negative_prompt, width, height, num_inference_steps, guidance_scale)
-            image_hashes.append(hash)
-    return image_hashes
+        references.append(reference)
+    return references
+
+@app.get("/api/v1/imagine/progress/{reference}")
+def imagine_progress(reference: str):
+    from imagineit_app.inference import MODEL
+    return MODEL.progress(reference)
 
 @app.get("/api/v1/lora-mount")
-def lora_mount(lora: str):
-    lora += ".safetensors"
-    if not os.path.exists(lora):
-        return {"error": "Lora file not found."}
-    load_model(lora)
+def lora_mount(loras: list[str], adapter_weights: list[int]=None):
+    from imagineit_app.inference import MODEL
+    for i, lora in enumerate(loras):
+        lora += ".safetensors"
+        if not os.path.exists(lora):
+            return {"error": "Lora file not found."}
+        loras[i] = lora
+    MODEL.load_model(loras, adapter_weights=adapter_weights)
     return {"status": "success"}
 
 def main():
