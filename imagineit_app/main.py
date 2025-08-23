@@ -191,14 +191,18 @@ def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_infe
 def imagine_progress(reference: str):
     return MODEL.progress(reference)
 
-@app.get("/api/v1/lora-mount")
-def lora_mount(loras: list[str], adapter_weights: list[float]=None):
-    for i, lora in enumerate(loras):
+class LoRAPayload(BaseModel):
+    loras: list[str]
+    adapter_weights: list[float] = None
+
+@app.post("/api/v1/lora-mount")
+def lora_mount(lora: LoRAPayload):
+    for i, lora in enumerate(lora.loras):
         lora += ".safetensors"
         if not os.path.exists(lora):
             return {"error": "Lora file not found."}
-        loras[i] = lora
-    MODEL.load_model(loras, adapter_weights=adapter_weights)
+        lora.loras[i] = lora
+    MODEL.load_model(lora.loras, adapter_weights=lora.adapter_weights)
     return {"status": "success"}
 
 def main():
