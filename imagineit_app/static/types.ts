@@ -6,7 +6,7 @@ export interface LoraModelConfig {
 export type ImageGenerationStatus = 'queued' | 'generating' | 'completed' | 'failed';
 
 export interface ImageGeneration {
-  reference: string;
+  id: number; // Unique ID for React keys, corresponds to generation index
   imageUrl: string | null;
   status: ImageGenerationStatus;
   progressText?: string;

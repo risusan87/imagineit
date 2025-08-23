@@ -8,7 +8,7 @@ import {
     COOKIE_ALWAYS_RANDOM_SEED, COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN,
     COOKIE_LORA_MODEL
 } from './constants';
-import { initiateGeneration } from './services/geminiService';
+import { generateImagesStream, fetchImageById } from './services/geminiService';
 import Header from './components/Header';
 import ImageControls from './components/ImageControls';
 import ImageDisplay from './components/ImageDisplay';
@@ -128,48 +128,6 @@ const App: React.FC = () => {
     
     const isBatchInProgress = imageGenerations.length > 0 && imageGenerations.some(g => g.status === 'queued' || g.status === 'generating');
 
-
-    const handleGenerate = useCallback(async () => {
-        if (isInitiating || isBatchInProgress) return;
-
-        setIsInitiating(true);
-        setError(null);
-
-        const seedForGeneration = alwaysRandomSeed
-            ? Math.floor(Math.random() * 2**32)
-            : seed;
-
-        try {
-            const references = await initiateGeneration(
-                prompt,
-                negativePrompt,
-                width || DEFAULT_WIDTH,
-                height || DEFAULT_HEIGHT,
-                steps,
-                guidanceScale,
-                seedForGeneration,
-                batchSize || 1,
-                inferenceCount || 1,
-            );
-             const newGenerations: ImageGeneration[] = references.map(reference => ({
-                reference,
-                imageUrl: null,
-                status: 'queued',
-            }));
-            setImageGenerations(newGenerations);
-            setGenerationKey(key => key + 1);
-
-        } catch (err) {
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError('An unexpected error occurred.');
-            }
-        } finally {
-            setIsInitiating(false);
-        }
-    }, [isInitiating, isBatchInProgress, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount, alwaysRandomSeed]);
-    
     const handleUpdateGeneration = useCallback((index: number, dataToUpdate: Partial<ImageGeneration>) => {
         setImageGenerations(currentGenerations => {
             if (index < 0 || index >= currentGenerations.length) {
@@ -180,6 +138,70 @@ const App: React.FC = () => {
             return newGenerations;
         });
     }, []);
+
+    const handleGenerate = useCallback(async () => {
+        if (isInitiating || isBatchInProgress) return;
+
+        setIsInitiating(true);
+        setError(null);
+
+        const totalImages = (batchSize || 1) * (inferenceCount || 1);
+        const initialGenerations: ImageGeneration[] = Array.from({ length: totalImages }, (_, i) => ({
+            id: Date.now() + i, // Unique key for React
+            imageUrl: null,
+            status: 'queued',
+        }));
+        setImageGenerations(initialGenerations);
+        setGenerationKey(key => key + 1);
+        setIsInitiating(false);
+
+        const seedForGeneration = alwaysRandomSeed
+            ? Math.floor(Math.random() * 2**32)
+            : seed;
+
+        const handleStreamUpdate = (updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[]) => {
+            updates.forEach(({ index, data }) => {
+                if (data.status === 'completed' && data.hash) {
+                    const hash = data.hash;
+                    handleUpdateGeneration(index, { ...data, progressText: 'Fetching final image...' });
+                    fetchImageById(hash)
+                        .then(imageUrl => {
+                             handleUpdateGeneration(index, { imageUrl, status: 'completed', progressText: 'Completed' });
+                        })
+                        .catch(err => {
+                            console.error(`Failed to fetch image for hash ${hash}:`, err);
+                            handleUpdateGeneration(index, { status: 'failed', progressText: 'Failed to retrieve final image.' });
+                        });
+                } else {
+                    handleUpdateGeneration(index, data);
+                }
+            });
+        };
+        
+        const handleStreamError = (streamError: Error) => {
+            setError(streamError.message);
+            setImageGenerations(current => current.map(gen => 
+                (gen.status === 'queued' || gen.status === 'generating') 
+                ? { ...gen, status: 'failed', progressText: 'Connection error' }
+                : gen
+            ));
+        };
+
+        await generateImagesStream(
+            prompt,
+            negativePrompt,
+            width || DEFAULT_WIDTH,
+            height || DEFAULT_HEIGHT,
+            steps,
+            guidanceScale,
+            seedForGeneration,
+            batchSize || 1,
+            inferenceCount || 1,
+            handleStreamUpdate,
+            handleStreamError
+        );
+
+    }, [isInitiating, isBatchInProgress, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount, alwaysRandomSeed, handleUpdateGeneration]);
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 font-sans flex flex-col items-center p-4 sm:p-6 lg:p-8">
@@ -229,7 +251,6 @@ const App: React.FC = () => {
                                     isBatchInProgress={isBatchInProgress}
                                     error={error}
                                     prompt={prompt}
-                                    onUpdate={handleUpdateGeneration}
                                 />
                             </div>
                         </div>
