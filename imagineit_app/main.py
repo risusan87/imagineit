@@ -17,6 +17,8 @@ from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2, del_img_
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
 from imagineit_app.resources import register_resources
 
+from imagineit_app.inference import MODEL
+
 
 app = FastAPI()
 register_resources(app)
@@ -171,7 +173,6 @@ def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_infe
     """
     endpoint for image inference
     """
-    from imagineit_app.inference import MODEL
     references = []
     for _ in range(inference_size):
         reference = MODEL.img_inference(
@@ -188,12 +189,10 @@ def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_infe
 
 @app.get("/api/v1/imagine/progress/{reference}")
 def imagine_progress(reference: str):
-    from imagineit_app.inference import MODEL
     return MODEL.progress(reference)
 
 @app.get("/api/v1/lora-mount")
 def lora_mount(loras: list[str], adapter_weights: list[int]=None):
-    from imagineit_app.inference import MODEL
     for i, lora in enumerate(loras):
         lora += ".safetensors"
         if not os.path.exists(lora):
