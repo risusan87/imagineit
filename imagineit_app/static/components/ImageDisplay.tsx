@@ -114,7 +114,7 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchIn
     
     const handlePrev = () => {
         if (currentIndex > 0) {
-            setCurrentIndex(prev => prev + 1);
+            setCurrentIndex(prev => prev - 1);
         }
     };
 
