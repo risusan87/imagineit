@@ -95,6 +95,7 @@ class SDXLInferenceHelper:
         }
 
     def img_inference(self, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
+        reference = str(uuid4())
         if self._pipes is None:
             self._requests[reference] = {
                 "status": "initializing_model", 
@@ -102,7 +103,6 @@ class SDXLInferenceHelper:
                 "error": None
             }
             self.load_model([])
-        reference = str(uuid4())
         self._requests[reference] = {
             "status": "in_queue", 
             "result": None, 
