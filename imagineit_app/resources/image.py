@@ -38,7 +38,7 @@ def get_image(identity_hash: str, compression_level: int):
     small_image.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")
 
-@router.post("/v1/image/inference")
+@router.get("/v1/images/inference")
 def imagine(payload: InferencePayload):
     from imagineit_app.inference import MODEL
     image_hashes = []
