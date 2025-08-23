@@ -390,35 +390,39 @@ export const deleteImage = async (hash: string): Promise<void> => {
 };
 
 /**
- * Mounts one or more LoRA models on the backend.
+ * Mounts one or more LoRA models on the backend via a POST request.
  * @param lorasConfig An array of LoRA model configurations.
  * @returns A promise that resolves to an object with a success status.
  */
 export const mountLora = async (lorasConfig: LoraModelConfig[]): Promise<{ status: string }> => {
     const baseUrl = getApiBaseUrl();
-    const params = new URLSearchParams();
-    
-    const modelsToLoad = lorasConfig.filter(l => l.model.trim() !== '');
+    const url = `${baseUrl}/api/v1/lora-mount`;
 
+    const modelsToLoad = lorasConfig.filter(l => l.model.trim() !== '');
     if (modelsToLoad.length === 0) {
         throw new Error("No LoRA models specified to load.");
     }
 
     const hasWeights = modelsToLoad.some(l => l.weight.trim() !== '');
 
-    modelsToLoad.forEach(l => params.append('loras', l.model.trim()));
+    const loras = modelsToLoad.map(l => l.model.trim());
+    const payload: { loras: string[]; adapter_weights?: number[] } = { loras };
 
     if (hasWeights) {
-        modelsToLoad.forEach(l => {
+        payload.adapter_weights = modelsToLoad.map(l => {
             const weight = parseFloat(l.weight);
-            params.append('adapter_weights', String(isNaN(weight) ? 0 : weight));
+            return isNaN(weight) ? 0 : weight; // Convert to number (float)
         });
     }
 
-    const url = `${baseUrl}/api/v1/lora-mount?${params.toString()}`;
-
     try {
-        const response = await fetch(url);
+        const response = await fetch(url, {
+            method: 'POST', // Use POST to send a structured JSON body
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
 
         if (!response.ok) {
             let errorMessage = `API request failed with status ${response.status}`;
