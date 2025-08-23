@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
     DEFAULT_STEPS, DEFAULT_GUIDANCE, DEFAULT_WIDTH, DEFAULT_HEIGHT,
     COOKIE_PROMPT, COOKIE_NEGATIVE_PROMPT, COOKIE_WIDTH, COOKIE_HEIGHT,
@@ -86,6 +86,11 @@ const App: React.FC = () => {
     const [inferenceCount, setInferenceCount] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_INFERENCE_COUNT, 1));
     
     const [imageGenerations, setImageGenerations] = useState<ImageGeneration[]>([]);
+    const imageGenerationsRef = useRef(imageGenerations);
+    useEffect(() => {
+        imageGenerationsRef.current = imageGenerations;
+    }, [imageGenerations]);
+
     const [generationKey, setGenerationKey] = useState(0);
     const [isInitiating, setIsInitiating] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
@@ -161,6 +166,15 @@ const App: React.FC = () => {
 
         const handleStreamUpdate = (updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[]) => {
             updates.forEach(({ index, data }) => {
+                const currentImage = imageGenerationsRef.current[index];
+                
+                // If the stream sends a 'completed' status for an image that is already
+                // marked as completed in our state, we can safely ignore it.
+                // This prevents redundant image fetching if the stream sends duplicate events.
+                if (data.status === 'completed' && currentImage?.status === 'completed') {
+                    return;
+                }
+
                 if (data.status === 'completed' && data.hash) {
                     const hash = data.hash;
                     handleUpdateGeneration(index, { ...data, progressText: 'Fetching final image...' });
