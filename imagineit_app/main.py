@@ -169,7 +169,7 @@ def get_tags():
     return all_tags
 
 @app.get("/api/v1/imagine")
-def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_inference_steps: int, guidance_scale: float, seed: int, inference_size: int):
+def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_inference_steps: int, guidance_scale: float, inference_size: int, seed: int=42):
     """
     endpoint for image inference
     """
