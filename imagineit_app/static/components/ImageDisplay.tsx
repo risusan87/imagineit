@@ -94,6 +94,8 @@ const Filmstrip: React.FC<{
 const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchInProgress, error, prompt, onUpdate }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const pollingRefs = useRef<Set<string>>(new Set());
+    const imageGenerationsRef = useRef(imageGenerations);
+    imageGenerationsRef.current = imageGenerations;
 
     const pollVisibleImages = useCallback(() => {
         // This function implements the core logic for image generation polling,
@@ -152,17 +154,22 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchIn
         pollVisibleImages();
     }, [pollVisibleImages]);
 
-    // Clean up the object URLs when the component unmounts or the images change
+    // Clean up object URLs when the component unmounts.
+    // This is triggered when a new generation starts because the parent `App` component
+    // provides a new `key`, forcing this component to unmount and remount.
+    // This prevents premature disposal of blob URLs during a single generation batch,
+    // ensuring generated images remain in memory and viewable.
     useEffect(() => {
-        const generationsToClean = imageGenerations;
         return () => {
-            generationsToClean.forEach(gen => {
+            // On cleanup, iterate through the list of images held in the ref
+            // and revoke their blob URLs to prevent memory leaks.
+            imageGenerationsRef.current.forEach(gen => {
                 if (gen.imageUrl && gen.imageUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(gen.imageUrl);
                 }
             });
         };
-    }, [imageGenerations]);
+    }, []); // An empty dependency array ensures this cleanup runs only on unmount.
 
     const handleNext = () => {
         if (currentIndex < imageGenerations.length - 1) {
