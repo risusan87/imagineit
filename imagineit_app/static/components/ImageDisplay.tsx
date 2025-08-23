@@ -1,14 +1,15 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorDisplay from './ErrorDisplay';
+import { ImageGeneration } from '../types';
+import { pollProgress, fetchImageById } from '../services/geminiService';
 
 interface ImageDisplayProps {
-    generatedImages: string[] | null;
-    isLoading: boolean;
+    imageGenerations: ImageGeneration[];
+    isBatchInProgress: boolean;
     error: string | null;
     prompt: string;
-    progress: string | null;
+    onUpdate: (index: number, data: Partial<ImageGeneration>) => void;
 }
 
 const ImagePlaceholder: React.FC = () => (
@@ -22,34 +23,50 @@ const ImagePlaceholder: React.FC = () => (
 );
 
 const FilmstripThumbnail: React.FC<{
-    url: string;
+    generation: ImageGeneration;
     index: number;
     isCurrent: boolean;
     onSelect: (index: number) => void;
-    prompt: string;
-}> = ({ url, index, isCurrent, onSelect, prompt }) => {
+}> = ({ generation, index, isCurrent, onSelect }) => {
     return (
         <button
             onClick={() => onSelect(index)}
             data-index={index}
-            className={`flex-shrink-0 w-20 h-20 rounded-md overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-purple-500 ${isCurrent ? 'border-2 border-purple-400 scale-105' : 'border-2 border-transparent hover:border-gray-500'}`}
+            className={`relative flex-shrink-0 w-20 h-20 rounded-md overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-purple-500 ${isCurrent ? 'border-2 border-purple-400 scale-105' : 'border-2 border-transparent hover:border-gray-500'}`}
             aria-label={`Go to image ${index + 1}`}
             aria-current={isCurrent}
         >
-            <img src={url} alt={`Thumbnail for "${prompt}" (${index + 1})`} className="w-full h-full object-cover" />
+            {generation.imageUrl ? (
+                <img src={generation.imageUrl} alt={`Thumbnail for image ${index + 1}`} className="w-full h-full object-cover" />
+            ) : (
+                <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">
+                    {generation.status === 'generating' ? 
+                        <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg> :
+                        <span className="text-2xl font-bold">{index + 1}</span>
+                    }
+                </div>
+            )}
+            {generation.status === 'failed' && (
+                <div className="absolute inset-0 bg-red-800/70 flex items-center justify-center" title={generation.progressText}>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                </div>
+            )}
         </button>
     );
 };
 
 const Filmstrip: React.FC<{
-    images: string[];
+    generations: ImageGeneration[];
     currentIndex: number;
     setCurrentIndex: (index: number) => void;
-    prompt: string;
-}> = ({ images, currentIndex, setCurrentIndex, prompt }) => {
+}> = ({ generations, currentIndex, setCurrentIndex }) => {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-    // Scroll the current thumbnail into view
     useEffect(() => {
         const currentThumbnail = scrollContainerRef.current?.querySelector(`[data-index="${currentIndex}"]`);
         currentThumbnail?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
@@ -58,14 +75,13 @@ const Filmstrip: React.FC<{
     return (
         <div className="flex-shrink-0 h-28 bg-gray-900/50 p-2 border-t-2 border-gray-700">
             <div ref={scrollContainerRef} className="flex justify-center items-center h-full gap-2 overflow-x-auto">
-                {images.map((url, index) => (
+                {generations.map((gen, index) => (
                     <FilmstripThumbnail
-                        key={url}
-                        url={url}
+                        key={gen.reference}
+                        generation={gen}
                         index={index}
                         isCurrent={index === currentIndex}
                         onSelect={setCurrentIndex}
-                        prompt={prompt}
                     />
                 ))}
             </div>
@@ -74,38 +90,62 @@ const Filmstrip: React.FC<{
 };
 
 
-const ImageDisplay: React.FC<ImageDisplayProps> = ({ generatedImages, isLoading, error, prompt, progress }) => {
+const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchInProgress, error, prompt, onUpdate }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
+    const pollingRefs = useRef<Set<string>>(new Set());
 
-    // Effect to robustly manage the current index during real-time updates.
+    // Reset index when a new batch starts
     useEffect(() => {
-        // If the array of images is cleared, it's a new generation, so reset the index.
-        if (generatedImages && generatedImages.length === 0) {
-            setCurrentIndex(0);
-        }
-        // If the current index becomes invalid (e.g. after an operation), move to the last valid index.
-        if (generatedImages && currentIndex >= generatedImages.length) {
-            setCurrentIndex(Math.max(0, generatedImages.length - 1));
-        }
-    }, [generatedImages, currentIndex]);
+        setCurrentIndex(0);
+    }, [imageGenerations.length > 0 && imageGenerations[0].reference]);
 
+
+    // Effect for polling visible images
+    useEffect(() => {
+        if (!isBatchInProgress) return;
+
+        const POLLING_RADIUS = 3;
+        const start = Math.max(0, currentIndex - POLLING_RADIUS);
+        const end = Math.min(imageGenerations.length, currentIndex + POLLING_RADIUS + 1);
+
+        for (let i = start; i < end; i++) {
+            const generation = imageGenerations[i];
+            if (generation.status === 'queued' && !pollingRefs.current.has(generation.reference)) {
+                pollingRefs.current.add(generation.reference);
+                onUpdate(i, { status: 'generating', progressText: 'Waiting in queue...' });
+
+                pollProgress(generation.reference, (progressText) => {
+                    onUpdate(i, { progressText: progressText.replace('in_progress: ', '') });
+                })
+                .then(async (imageHashes) => {
+                    const hash = imageHashes[0];
+                    const imageUrl = await fetchImageById(hash);
+                    onUpdate(i, { status: 'completed', imageUrl, hash, progressText: 'Completed' });
+                })
+                .catch((err) => {
+                    onUpdate(i, { status: 'failed', progressText: err.message });
+                })
+                .finally(() => {
+                    pollingRefs.current.delete(generation.reference);
+                });
+            }
+        }
+    }, [currentIndex, imageGenerations, onUpdate, isBatchInProgress]);
 
     // Clean up the object URLs when the component unmounts or the images change
     useEffect(() => {
-        const imagesToClean = generatedImages;
+        const generationsToClean = imageGenerations;
         return () => {
-            if (imagesToClean) {
-                imagesToClean.forEach(imgUrl => {
-                    if (imgUrl && imgUrl.startsWith('blob:')) {
-                        URL.revokeObjectURL(imgUrl);
-                    }
-                });
-            }
+            generationsToClean.forEach(gen => {
+                if (gen.imageUrl && gen.imageUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(gen.imageUrl);
+                }
+            });
         };
-    }, [generatedImages]);
+    }, [imageGenerations]);
 
     const handleNext = () => {
-        if (generatedImages && currentIndex < generatedImages.length - 1) {
+        if (currentIndex < imageGenerations.length - 1) {
             setCurrentIndex(prev => prev + 1);
         }
     };
@@ -116,62 +156,69 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ generatedImages, isLoading,
         }
     };
 
-    const currentImage = generatedImages ? generatedImages[currentIndex] : null;
-    const hasAnyImages = generatedImages && generatedImages.length > 0;
+    const currentGeneration = imageGenerations[currentIndex];
+    const totalCount = imageGenerations.length;
+    const completedCount = imageGenerations.filter(g => g.status === 'completed' || g.status === 'failed').length;
+    const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
     return (
         <div className="bg-gray-800/50 rounded-2xl w-full flex flex-col min-h-[550px] lg:h-[calc(100vh-4rem)] overflow-hidden lg:sticky lg:top-8">
+            {isBatchInProgress && (
+                 <div className="p-4 flex-shrink-0">
+                    <div className="flex justify-between items-center mb-1 text-sm font-medium text-gray-300">
+                        <span>Overall Progress</span>
+                        <span>{completedCount} / {totalCount}</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2.5">
+                        <div className="bg-gradient-to-r from-purple-500 to-pink-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
+                    </div>
+                </div>
+            )}
             <div className="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
-                {/* Main Content Logic */}
                 {(() => {
-                    if (hasAnyImages && currentImage) {
-                        return (
-                            <>
-                                <img 
-                                    src={currentImage} 
-                                    alt={`${prompt} (${currentIndex + 1} of ${generatedImages?.length})` || 'Generated image'} 
-                                    className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                                />
-                                {generatedImages && generatedImages.length > 1 && (
-                                     <>
-                                        <button onClick={handlePrev} disabled={currentIndex === 0} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                                        </button>
-                                        <button onClick={handleNext} disabled={currentIndex >= generatedImages.length - 1} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                        </button>
-                                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-3 py-1 rounded-full">
-                                            {currentIndex + 1} / {generatedImages.length}
-                                        </div>
-                                    </>
-                                )}
-                            </>
-                        );
-                    }
-                    if (isLoading) {
-                        return <LoadingSpinner progress={progress} />;
-                    }
                     if (error) {
                         return <ErrorDisplay error={error} />;
                     }
-                    // Default state before any generation
-                    return <ImagePlaceholder />;
+                    if (!currentGeneration && !isBatchInProgress) {
+                        return <ImagePlaceholder />;
+                    }
+                    if (currentGeneration) {
+                         switch (currentGeneration.status) {
+                            case 'completed':
+                                return (
+                                    <img 
+                                        src={currentGeneration.imageUrl!} 
+                                        alt={`${prompt} (${currentIndex + 1} of ${totalCount})`}
+                                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                                    />
+                                );
+                            case 'generating':
+                                return <LoadingSpinner progress={currentGeneration.progressText} />;
+                             case 'failed':
+                                return <ErrorDisplay error={currentGeneration.progressText || 'Generation for this image failed.'} />;
+                            case 'queued':
+                                return <LoadingSpinner progress="Waiting in queue..." />;
+                        }
+                    }
+                    return <LoadingSpinner progress="Preparing generation..." />; // Fallback while state initializes
                 })()}
 
-                {/* Persistent Loading Indicator (when images are already showing) */}
-                {isLoading && hasAnyImages && (
-                    <div className="absolute top-4 right-4 bg-black/60 p-3 rounded-lg text-white flex items-center gap-3 animate-pulse">
-                        <div className="w-6 h-6 border-2 border-dashed rounded-full animate-spin border-purple-400"></div>
-                        <span className="text-sm font-semibold">Generating...</span>
-                    </div>
+                {totalCount > 1 && (
+                     <>
+                        <button onClick={handlePrev} disabled={currentIndex === 0} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                        <button onClick={handleNext} disabled={currentIndex >= totalCount - 1} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                    </>
                 )}
             </div>
-            {hasAnyImages && generatedImages.length > 1 && (
+            {totalCount > 0 && (
                 <Filmstrip
-                    images={generatedImages}
+                    generations={imageGenerations}
                     currentIndex={currentIndex}
                     setCurrentIndex={setCurrentIndex}
-                    prompt={prompt}
                 />
             )}
         </div>

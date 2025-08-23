@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { 
     DEFAULT_STEPS, DEFAULT_GUIDANCE, DEFAULT_WIDTH, DEFAULT_HEIGHT,
@@ -8,7 +7,7 @@ import {
     COOKIE_ALWAYS_RANDOM_SEED, COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN,
     COOKIE_LORA_MODEL
 } from './constants';
-import { generateImage } from './services/geminiService';
+import { initiateGeneration } from './services/geminiService';
 import Header from './components/Header';
 import ImageControls from './components/ImageControls';
 import ImageDisplay from './components/ImageDisplay';
@@ -17,7 +16,7 @@ import LabelingView from './components/LabelingView';
 import TrainView from './components/TrainView';
 import { getCookie, setCookie } from './utils/cookies';
 import ExportView from './components/ExportView';
-import { LoraModelConfig } from './types';
+import { LoraModelConfig, ImageGeneration } from './types';
 
 // Helper to get a number from a cookie or return a default value.
 const getNumberFromCookie = (cookieName: string, defaultValue: number): number => {
@@ -85,10 +84,9 @@ const App: React.FC = () => {
     const [batchSize, setBatchSize] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_BATCH_SIZE, 1));
     const [inferenceCount, setInferenceCount] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_INFERENCE_COUNT, 1));
     
-    const [generatedImages, setGeneratedImages] = useState<string[] | null>(null);
-    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [imageGenerations, setImageGenerations] = useState<ImageGeneration[]>([]);
+    const [isInitiating, setIsInitiating] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
-    const [progress, setProgress] = useState<string | null>(null);
 
     // State for backend settings
     const [backendMode, setBackendMode] = useState<'combined' | 'dedicated'>(() => (getCookie(COOKIE_BACKEND_MODE) as 'combined' | 'dedicated') || 'combined');
@@ -125,25 +123,23 @@ const App: React.FC = () => {
             }
         }
     }, [batchSize, inferenceCount, seed]);
+    
+    const isBatchInProgress = imageGenerations.length > 0 && imageGenerations.some(g => g.status === 'queued' || g.status === 'generating');
+
 
     const handleGenerate = useCallback(async () => {
-        if (isLoading) return;
+        if (isInitiating || isBatchInProgress) return;
 
-        setIsLoading(true);
+        setIsInitiating(true);
         setError(null);
-        setGeneratedImages([]);
-        setProgress(null);
+        setImageGenerations([]);
 
         const seedForGeneration = alwaysRandomSeed
             ? Math.floor(Math.random() * 2**32)
             : seed;
 
-        const handleNewImage = (imageUrl: string) => {
-            setGeneratedImages(prevImages => [...(prevImages || []), imageUrl]);
-        };
-
         try {
-            await generateImage(
+            const references = await initiateGeneration(
                 prompt,
                 negativePrompt,
                 width || DEFAULT_WIDTH,
@@ -153,9 +149,14 @@ const App: React.FC = () => {
                 seedForGeneration,
                 batchSize || 1,
                 inferenceCount || 1,
-                setProgress,
-                handleNewImage
             );
+             const initialGenerations: ImageGeneration[] = references.map(reference => ({
+                reference,
+                imageUrl: null,
+                status: 'queued',
+            }));
+            setImageGenerations(initialGenerations);
+
         } catch (err) {
             if (err instanceof Error) {
                 setError(err.message);
@@ -163,10 +164,20 @@ const App: React.FC = () => {
                 setError('An unexpected error occurred.');
             }
         } finally {
-            setIsLoading(false);
-            setProgress(null);
+            setIsInitiating(false);
         }
-    }, [isLoading, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount, alwaysRandomSeed]);
+    }, [isInitiating, isBatchInProgress, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount, alwaysRandomSeed]);
+    
+    const handleUpdateGeneration = useCallback((index: number, dataToUpdate: Partial<ImageGeneration>) => {
+        setImageGenerations(currentGenerations => {
+            if (index < 0 || index >= currentGenerations.length) {
+                return currentGenerations;
+            }
+            const newGenerations = [...currentGenerations];
+            newGenerations[index] = { ...newGenerations[index], ...dataToUpdate };
+            return newGenerations;
+        });
+    }, []);
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 font-sans flex flex-col items-center p-4 sm:p-6 lg:p-8">
@@ -205,17 +216,17 @@ const App: React.FC = () => {
                                     setBatchSize={setBatchSize}
                                     inferenceCount={inferenceCount}
                                     setInferenceCount={setInferenceCount}
-                                    isLoading={isLoading}
+                                    isLoading={isInitiating || isBatchInProgress}
                                     onGenerate={handleGenerate}
                                 />
                             </div>
                             <div className="w-full lg:w-2/3 flex-1">
                                 <ImageDisplay
-                                    generatedImages={generatedImages}
-                                    isLoading={isLoading}
+                                    imageGenerations={imageGenerations}
+                                    isBatchInProgress={isBatchInProgress}
                                     error={error}
                                     prompt={prompt}
-                                    progress={progress}
+                                    onUpdate={handleUpdateGeneration}
                                 />
                             </div>
                         </div>
