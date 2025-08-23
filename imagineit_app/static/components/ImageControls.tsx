@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
     MIN_STEPS, MAX_STEPS, 
     MIN_GUIDANCE, MAX_GUIDANCE, 
@@ -7,14 +7,15 @@ import {
     PREDEFINED_ASPECT_RATIOS
 } from '../constants';
 import { mountLora } from '../services/geminiService';
+import { LoraModelConfig } from '../types';
 
 interface ImageControlsProps {
     prompt: string;
     setPrompt: (prompt: string) => void;
     negativePrompt: string;
     setNegativePrompt: (prompt: string) => void;
-    loraModel: string;
-    setLoraModel: (lora: string) => void;
+    loraModels: LoraModelConfig[];
+    setLoraModels: (loras: LoraModelConfig[]) => void;
     width: number | '';
     setWidth: (width: number | '') => void;
     height: number | '';
@@ -36,12 +37,11 @@ interface ImageControlsProps {
 }
 
 const AspectRatioVisualizer: React.FC<{ width: number | ''; height: number | '' }> = ({ width, height }) => {
-    // A fixed-size container for the visualizer.
-    const containerClasses = "h-32 w-full bg-gray-900/50 rounded-lg flex items-center justify-center text-center text-gray-500 text-sm p-4 transition-all duration-300";
+    const containerBaseClasses = "h-40 w-full bg-gray-900/50 rounded-lg transition-all duration-300";
 
     if (width === '' || height === '' || +width === 0 || +height === 0) {
         return (
-            <div className={containerClasses}>
+            <div className={`${containerBaseClasses} flex items-center justify-center text-center text-gray-500 text-sm p-4`}>
                 Select an aspect ratio or enter custom dimensions
             </div>
         );
@@ -51,17 +51,20 @@ const AspectRatioVisualizer: React.FC<{ width: number | ''; height: number | '' 
     const numericHeight = Number(height);
 
     return (
-        <div className={containerClasses.replace('text-center text-gray-500 text-sm p-4', 'p-2')}>
-            {/* The inner visualizer has its aspect ratio set. */}
-            {/* `max-width` and `max-height` ensure it fits inside the container, simulating `object-contain`. */}
+        <div className={`${containerBaseClasses} flex items-center justify-center p-4`}>
+            {/* 
+                The inner visualizer uses aspect-ratio to maintain its shape.
+                By setting height to 100% and max-width to 100%, we ensure it fills the container vertically
+                while respecting the aspect ratio, and it won't overflow horizontally. This effectively
+                simulates a 'contain' behavior.
+            */}
             <div
                 style={{
                     aspectRatio: `${numericWidth} / ${numericHeight}`,
-                    maxHeight: '100%',
-                    maxWidth: '100%',
+                    height: '100%',
                     transition: 'all 0.3s ease-in-out',
                 }}
-                className="bg-purple-500/30 border-2 border-purple-400 rounded-md shadow-inner"
+                className="bg-purple-500/30 border-2 border-purple-400 rounded-md shadow-inner w-auto max-w-full"
             />
         </div>
     );
@@ -71,7 +74,7 @@ const AspectRatioVisualizer: React.FC<{ width: number | ''; height: number | '' 
 const ImageControls: React.FC<ImageControlsProps> = ({ 
     prompt, setPrompt, 
     negativePrompt, setNegativePrompt,
-    loraModel, setLoraModel,
+    loraModels, setLoraModels,
     width, setWidth,
     height, setHeight,
     seed, setSeed, 
@@ -141,14 +144,65 @@ const ImageControls: React.FC<ImageControlsProps> = ({
         setter(validatedNum);
     };
     
+    const handleLoraChange = (index: number, field: 'model' | 'weight', value: string) => {
+        const newLoraModels = [...loraModels];
+        const updatedModel = { ...newLoraModels[index] };
+
+        if (field === 'weight') {
+            // Allow empty, numbers, and a single decimal point for flexible input
+            if (value === '' || /^[0-9]*\.?[0-9]*$/.test(value)) {
+                const num = parseFloat(value);
+                // Prevent values outside the 0-1 range
+                if (!isNaN(num) && (num < 0 || num > 1)) {
+                    return;
+                }
+                updatedModel.weight = value;
+            }
+        } else {
+            updatedModel.model = value;
+        }
+        newLoraModels[index] = updatedModel;
+        setLoraModels(newLoraModels);
+        setLoraLoadState('idle'); // Reset on change
+    };
+
+    const handleAddLora = () => {
+        setLoraModels([...loraModels, { model: '', weight: '' }]);
+    };
+
+    const handleRemoveLora = (index: number) => {
+        if (loraModels.length > 1) {
+            setLoraModels(loraModels.filter((_, i) => i !== index));
+        } else {
+            // If it's the last one, just clear its values
+            setLoraModels([{ model: '', weight: '' }]);
+        }
+    };
+
+    const { totalWeight, hasWeights, areWeightsValid } = useMemo(() => {
+        const activeLoras = loraModels.filter(l => l.model.trim() !== '');
+        const hasWeights = activeLoras.some(l => l.weight.trim() !== '');
+        const totalWeight = activeLoras.reduce((sum, lora) => sum + (parseFloat(lora.weight) || 0), 0);
+        // Weights are valid if none are specified, or if they are specified and sum to 1.
+        const areWeightsValid = !hasWeights || Math.abs(totalWeight - 1.0) < 0.001;
+        return { totalWeight, hasWeights, areWeightsValid };
+    }, [loraModels]);
+
     const handleLoadLora = async () => {
-        if (!loraModel.trim() || loraLoadState === 'loading') return;
+        const modelsToLoad = loraModels.filter(l => l.model.trim() !== '');
+        if (modelsToLoad.length === 0 || loraLoadState === 'loading') return;
+
+        if (!areWeightsValid) {
+            setLoraLoadState('error');
+            setLoraError('Adapter weights must sum to 1.0.');
+            return;
+        }
 
         setLoraLoadState('loading');
         setLoraError(null);
 
         try {
-            await mountLora(loraModel);
+            await mountLora(modelsToLoad);
             setLoraLoadState('success');
             setTimeout(() => setLoraLoadState('idle'), 3000); // Reset after 3s
         } catch (err) {
@@ -160,6 +214,9 @@ const ImageControls: React.FC<ImageControlsProps> = ({
             }
         }
     };
+
+    const canLoadLora = loraModels.some(l => l.model.trim() !== '') && loraLoadState !== 'loading';
+
 
     return (
         <div className="bg-gray-800/50 p-6 rounded-2xl shadow-lg flex flex-col h-full sticky top-8">
@@ -194,33 +251,67 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                 </div>
 
                 <div>
-                    <label htmlFor="lora-model" className="block text-sm font-medium text-gray-300 mb-2">
-                        LoRA Model <span className="text-gray-400">(optional)</span>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                        LoRA Models <span className="text-gray-400">(optional)</span>
                     </label>
-                    <div className="flex items-start gap-2">
-                        <input
-                            id="lora-model"
-                            type="text"
-                            className="flex-grow w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
-                            value={loraModel}
-                            onChange={(e) => {
-                                setLoraModel(e.target.value);
-                                setLoraLoadState('idle'); // Reset state on change
-                            }}
-                            placeholder="e.g., character_style_v1"
-                            disabled={isLoading}
-                        />
-                        <button
+                    <div className="space-y-3">
+                        {loraModels.map((lora, index) => (
+                             <div key={index} className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    className="flex-grow w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
+                                    value={lora.model}
+                                    onChange={(e) => handleLoraChange(index, 'model', e.target.value)}
+                                    placeholder={`LoRA Model ${index + 1}`}
+                                    disabled={isLoading}
+                                    aria-label={`LoRA Model ${index + 1} name`}
+                                />
+                                <input
+                                    type="text" // Use text to allow partial input like "0."
+                                    className="w-24 bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield]"
+                                    value={lora.weight}
+                                    onChange={(e) => handleLoraChange(index, 'weight', e.target.value)}
+                                    placeholder="Weight"
+                                    disabled={isLoading}
+                                    aria-label={`LoRA Model ${index + 1} weight`}
+                                />
+                                <button
+                                    onClick={() => handleRemoveLora(index)}
+                                    disabled={isLoading}
+                                    className="p-3 bg-gray-700 hover:bg-red-800/50 rounded-lg transition-colors disabled:opacity-50 text-gray-400 hover:text-red-400"
+                                    aria-label={`Remove LoRA Model ${index + 1}`}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                     <button
+                        onClick={handleAddLora}
+                        disabled={isLoading}
+                        className="w-full mt-3 text-sm text-purple-400 hover:text-purple-300 font-semibold py-2 px-4 rounded-lg border-2 border-dashed border-gray-600 hover:border-purple-500 transition-colors disabled:opacity-50"
+                    >
+                        + Add another LoRA
+                    </button>
+                    <div className="flex items-center justify-between mt-3">
+                         <button
                             onClick={handleLoadLora}
-                            disabled={isLoading || !loraModel.trim() || loraLoadState === 'loading'}
-                            className="px-4 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex-shrink-0"
-                            aria-label="Load LoRA model"
+                            disabled={isLoading || !canLoadLora}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex-shrink-0"
+                            aria-label="Load LoRA models"
                         >
-                           {loraLoadState === 'loading' ? '...' : 'Load'}
+                           {loraLoadState === 'loading' ? 'Loading...' : 'Load Models'}
                         </button>
+                        {hasWeights && (
+                            <p className={`text-xs font-mono transition-colors ${areWeightsValid ? 'text-gray-400' : 'text-red-400'}`}>
+                                Sum: {totalWeight.toFixed(2)} / 1.0
+                            </p>
+                        )}
                     </div>
                      <div className="text-xs mt-2 h-4">
-                        {loraLoadState === 'success' && <p className="text-green-400">LoRA loaded successfully!</p>}
+                        {loraLoadState === 'success' && <p className="text-green-400">LoRA models loaded successfully!</p>}
                         {loraLoadState === 'error' && <p className="text-red-400">{loraError}</p>}
                     </div>
                 </div>

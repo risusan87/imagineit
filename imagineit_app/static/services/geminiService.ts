@@ -1,6 +1,7 @@
 
 import { getCookie } from '../utils/cookies';
 import { COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN } from '../constants';
+import { LoraModelConfig } from '../types';
 
 /**
  * Determines the base URL for API requests based on user settings.
@@ -389,13 +390,31 @@ export const deleteImage = async (hash: string): Promise<void> => {
 };
 
 /**
- * Mounts a LoRA model on the backend.
- * @param lora The name of the LoRA model file (without extension).
+ * Mounts one or more LoRA models on the backend.
+ * @param lorasConfig An array of LoRA model configurations.
  * @returns A promise that resolves to an object with a success status.
  */
-export const mountLora = async (lora: string): Promise<{ status: string }> => {
+export const mountLora = async (lorasConfig: LoraModelConfig[]): Promise<{ status: string }> => {
     const baseUrl = getApiBaseUrl();
-    const params = new URLSearchParams({ lora });
+    const params = new URLSearchParams();
+    
+    const modelsToLoad = lorasConfig.filter(l => l.model.trim() !== '');
+
+    if (modelsToLoad.length === 0) {
+        throw new Error("No LoRA models specified to load.");
+    }
+
+    const hasWeights = modelsToLoad.some(l => l.weight.trim() !== '');
+
+    modelsToLoad.forEach(l => params.append('loras', l.model.trim()));
+
+    if (hasWeights) {
+        modelsToLoad.forEach(l => {
+            const weight = parseFloat(l.weight);
+            params.append('adapter_weights', String(isNaN(weight) ? 0 : weight));
+        });
+    }
+
     const url = `${baseUrl}/api/v1/lora-mount?${params.toString()}`;
 
     try {
