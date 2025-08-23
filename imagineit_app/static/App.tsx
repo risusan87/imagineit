@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { 
     DEFAULT_STEPS, DEFAULT_GUIDANCE, DEFAULT_WIDTH, DEFAULT_HEIGHT,
@@ -85,6 +86,7 @@ const App: React.FC = () => {
     const [inferenceCount, setInferenceCount] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_INFERENCE_COUNT, 1));
     
     const [imageGenerations, setImageGenerations] = useState<ImageGeneration[]>([]);
+    const [generationKey, setGenerationKey] = useState(0);
     const [isInitiating, setIsInitiating] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -132,7 +134,6 @@ const App: React.FC = () => {
 
         setIsInitiating(true);
         setError(null);
-        setImageGenerations([]);
 
         const seedForGeneration = alwaysRandomSeed
             ? Math.floor(Math.random() * 2**32)
@@ -150,12 +151,13 @@ const App: React.FC = () => {
                 batchSize || 1,
                 inferenceCount || 1,
             );
-             const initialGenerations: ImageGeneration[] = references.map(reference => ({
+             const newGenerations: ImageGeneration[] = references.map(reference => ({
                 reference,
                 imageUrl: null,
                 status: 'queued',
             }));
-            setImageGenerations(initialGenerations);
+            setImageGenerations(newGenerations);
+            setGenerationKey(key => key + 1);
 
         } catch (err) {
             if (err instanceof Error) {
@@ -222,6 +224,7 @@ const App: React.FC = () => {
                             </div>
                             <div className="w-full lg:w-2/3 flex-1">
                                 <ImageDisplay
+                                    key={generationKey}
                                     imageGenerations={imageGenerations}
                                     isBatchInProgress={isBatchInProgress}
                                     error={error}

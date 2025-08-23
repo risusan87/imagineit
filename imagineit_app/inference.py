@@ -11,6 +11,10 @@ from uuid import uuid4
 from imagineit_app.imdb import write_v2, GLOBAL_DATABASE_THREAD_LOCK
 
 class SDXLInferenceHelper:
+    """
+    "EZ" inference
+    """
+    
     def __init__(self):
         self._pipes: list[StableDiffusionXLPipeline] = None
         self._pipe_free_flag: list[threading.Event] = []
