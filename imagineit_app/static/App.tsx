@@ -17,6 +17,7 @@ import LabelingView from './components/LabelingView';
 import TrainView from './components/TrainView';
 import { getCookie, setCookie } from './utils/cookies';
 import ExportView from './components/ExportView';
+import { LoraModelConfig } from './types';
 
 // Helper to get a number from a cookie or return a default value.
 const getNumberFromCookie = (cookieName: string, defaultValue: number): number => {
@@ -47,7 +48,26 @@ const App: React.FC = () => {
     // State for Inference Tab, initialized from cookies with fallbacks.
     const [prompt, setPrompt] = useState<string>(() => getCookie(COOKIE_PROMPT) || '');
     const [negativePrompt, setNegativePrompt] = useState<string>(() => getCookie(COOKIE_NEGATIVE_PROMPT) || '');
-    const [loraModel, setLoraModel] = useState<string>(() => getCookie(COOKIE_LORA_MODEL) || '');
+    const [loraModels, setLoraModels] = useState<LoraModelConfig[]>(() => {
+        const cookieValue = getCookie(COOKIE_LORA_MODEL);
+        if (cookieValue) {
+            try {
+                const parsed = JSON.parse(cookieValue);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    // Basic validation to ensure it's in the expected format
+                    if (typeof parsed[0].model === 'string' && typeof parsed[0].weight === 'string') {
+                        return parsed;
+                    }
+                }
+            } catch (e) {
+                // If parsing fails, it's likely the old string format.
+                // Migrate it to the new structure.
+                return [{ model: cookieValue, weight: '' }];
+            }
+        }
+        // Default to one empty LoRA entry
+        return [{ model: '', weight: '' }];
+    });
     const [width, setWidth] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_WIDTH, DEFAULT_WIDTH));
     const [height, setHeight] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_HEIGHT, DEFAULT_HEIGHT));
     const [seed, setSeed] = useState<number | null>(() => {
@@ -80,7 +100,7 @@ const App: React.FC = () => {
     // Effects to save state to cookies on change.
     useEffect(() => { setCookie(COOKIE_PROMPT, prompt, COOKIE_EXPIRATION_DAYS); }, [prompt]);
     useEffect(() => { setCookie(COOKIE_NEGATIVE_PROMPT, negativePrompt, COOKIE_EXPIRATION_DAYS); }, [negativePrompt]);
-    useEffect(() => { setCookie(COOKIE_LORA_MODEL, loraModel, COOKIE_EXPIRATION_DAYS); }, [loraModel]);
+    useEffect(() => { setCookie(COOKIE_LORA_MODEL, JSON.stringify(loraModels), COOKIE_EXPIRATION_DAYS); }, [loraModels]);
     useEffect(() => { setCookie(COOKIE_WIDTH, String(width), COOKIE_EXPIRATION_DAYS); }, [width]);
     useEffect(() => { setCookie(COOKIE_HEIGHT, String(height), COOKIE_EXPIRATION_DAYS); }, [height]);
     useEffect(() => { setCookie(COOKIE_SEED, seed, COOKIE_EXPIRATION_DAYS); }, [seed]);
@@ -163,8 +183,8 @@ const App: React.FC = () => {
                                     setPrompt={setPrompt}
                                     negativePrompt={negativePrompt}
                                     setNegativePrompt={setNegativePrompt}
-                                    loraModel={loraModel}
-                                    setLoraModel={setLoraModel}
+                                    loraModels={loraModels}
+                                    setLoraModels={setLoraModels}
                                     width={width}
                                     setWidth={setWidth}
                                     height={height}
