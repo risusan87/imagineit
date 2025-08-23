@@ -26,6 +26,7 @@ export const pollProgress = async (reference: string, onProgress: (progress: str
     const progressUrl = `${baseUrl}/api/v1/imagine/progress/${reference}`;
     
     const pollTimeout = 300000; // 5 minutes
+    // Polling interval is set to 1 second (1000ms) as requested for status updates.
     const pollInterval = 1000; // 1 second
     const startTime = Date.now();
 
