@@ -40,6 +40,7 @@ def get_image(identity_hash: str, compression_level: int):
 
 @router.post("/v1/image/inference")
 def imagine(payload: InferencePayload):
+    from imagineit_app.inference import MODEL
     image_hashes = []
     for _ in range(inference_size):
         image_bytes, seeds = img_inference(

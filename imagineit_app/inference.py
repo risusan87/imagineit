@@ -1,50 +1,111 @@
 import os
+
 import torch
 from diffusers import StableDiffusionXLPipeline # Use the correct XL pipeline
 from io import BytesIO
 import gc
+import threading
+import time
+from uuid import uuid4
 
-pipe = None
+from imagineit_app.imdb import write_v2, GLOBAL_DATABASE_THREAD_LOCK
 
-def load_model(loras: str=None):
-    global pipe
-    if pipe is not None:
-        pipe = None
-        gc.collect()    
-        with torch.no_grad():
-            torch.cuda.empty_cache()
-    base_model_id = "cagliostrolab/animagine-xl-4.0"
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+class SDXLInferenceHelper:
+    def __init__(self):
+        self._pipes: list[StableDiffusionXLPipeline] = None
+        self._pipe_free_flag: list[threading.Event] = []
+        self._requests = {}
 
-    print("Loading the SDXL base pipeline structure...")
-    pipe = StableDiffusionXLPipeline.from_pretrained( # Use the XL class
-        base_model_id,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-    )
-    if loras is not None:
-        pipe.load_lora_weights(loras)
-    pipe.to(device)
+    def load_model(self, loras: list[str], adapter_weights: list[int]=None):
+        model_name = "cagliostrolab/animagine-xl-4.0"
+        print(f"Loading model {model_name}...")
+        if self._pipes is not None:
+            print("Disposing old model...")
+            self._pipes = None
+            gc.collect()    
+            with torch.no_grad():
+                torch.cuda.empty_cache()
 
-def img_inference(prompt: str, steps: int=28, guidance_scale: float=5.0, negative_prompt: str = "", width: int = 1024, height: int = 1024, seed: int=42, batch_size: int=1):
-    global pipe
-    if pipe is None:
-        load_model(None)
-    prompts = [prompt] * batch_size
-    negative_prompts = [negative_prompt] * batch_size
-    numerical_seeds = [(seed)] if batch_size == 1 else [int.from_bytes(os.urandom(8), signed=False) for _ in range(batch_size)]
-    seeds = [torch.Generator(device=pipe.device).manual_seed(nseed) for nseed in numerical_seeds]
-    images = pipe(
-        prompt=prompts, 
-        negative_prompt=negative_prompts,
-        num_inference_steps=steps,
-        guidance_scale=guidance_scale,
-        width=width,
-        height=height,
-        generator=seeds,
-    ).images
-    image_bytes_list = []
-    for image in images:
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-        image_bytes_list.append(buffer.getvalue())
-    return image_bytes_list, numerical_seeds
+        # TODO: Support other than cuda
+        if torch.cuda.is_available():
+            gpu_count = torch.cuda.device_count()
+            print(f"Found {gpu_count} cuda GPU(s)")
+            for dev_name in range(gpu_count):
+                print(f"Loading model on GPU {dev_name}...")
+                self._pipes.append(StableDiffusionXLPipeline.from_pretrained( 
+                    model_name,
+                    torch_dtype=torch.float16,
+                ))
+                self._pipe_free_flag.append(threading.Event())
+                self._pipes[dev_name].to(f"cuda:{dev_name}")
+        else:
+            print("NO CUDA GPUs FOUND! The model will be loaded on CPU")
+            print("Loading Stable Diffusion on CPU is NOT recommended, but harmless. It will take space in system RAM for a lot less efficient inference compared to GPU")
+            self._pipes.append(StableDiffusionXLPipeline.from_pretrained(
+                model_name,
+                torch_dtype=torch.float32
+            ))
+            self._pipe_free_flag.append(threading.Event())
+            self._pipes[0].to("cpu")
+        if loras:
+            for pipe in self._pipes:
+                adapter_names = []
+                for lora in loras:
+                    lora_name = lora.split("/")[-1].split(".")[0]
+                    pipe.load_lora_weights(lora, adapter_name=lora_name)
+                    adapter_names.append(lora_name)
+                pipe.set_adapters(adapter_names, adapter_weights=adapter_weights if adapter_weights else None)
+
+    def progress(self, reference: str):
+        return self._requests.get(reference, {"status": "not_found", "result": None, "error": "Reference not found"})
+    
+    def _generate(self, reference: str, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
+        available_pipe = -1
+        while available_pipe == -1:
+            time.sleep(0.1)
+            for i, pipe_flag in enumerate(self._pipe_free_flag):
+                if not pipe_flag.is_set():
+                    pipe_flag.set()
+                    available_pipe = i
+                    break
+        self._requests[reference]["status"] = "started"
+        pipe = self._pipes[available_pipe]
+        def timestep_callback(step, timestep, latents):
+            self._requests[reference]["status"] = f"in_progress: ({step}/{steps})"
+        image = pipe(
+            prompt=prompt,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            negative_prompt=negative_prompt,
+            width=width,
+            height=height,
+            seed=seed,
+            callback_steps=1,
+            callback=timestep_callback
+        ).images[0]
+        image_bytes = BytesIO()
+        image.save(image_bytes, format="PNG")
+        with GLOBAL_DATABASE_THREAD_LOCK:
+            img_hash = write_v2(None, image_bytes.getvalue(), seed, prompt, negative_prompt, width, height, steps, guidance_scale)
+        self._pipe_free_flag[available_pipe].clear()
+        self._requests[reference] = {
+            "status": "completed",
+            "result": img_hash,
+            "error": None
+        }
+
+    def img_inference(self, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
+        if self._pipes is None:
+            raise ValueError("Model not loaded")
+        reference = str(uuid4())
+        self._requests[reference] = {
+            "status": "in_queue", 
+            "result": None, 
+            "error": None
+        }
+        worker = threading.Thread(target=self._generate, args=(reference, prompt, steps, guidance_scale, negative_prompt, width, height, seed))
+        worker.start()
+        return reference
+    
+MODEL = SDXLInferenceHelper()
+MODEL.load_model(loras=[])

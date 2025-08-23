@@ -21,9 +21,65 @@ const getApiBaseUrl = (): string => {
     return ''; // For combined mode, use relative paths
 };
 
+const pollProgress = async (reference: string, onProgress: (progress: string) => void): Promise<string[]> => {
+    const baseUrl = getApiBaseUrl();
+    const progressUrl = `${baseUrl}/api/v1/imagine/progress/${reference}`;
+    
+    const pollTimeout = 300000; // 5 minutes
+    const pollInterval = 1000; // 1 second
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < pollTimeout) {
+        try {
+            const response = await fetch(progressUrl);
+            if (!response.ok) {
+                let errorMessage = `Progress check failed with status ${response.status}`;
+                 try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.detail || errorMessage;
+                } catch (e) {
+                    // Ignore if response body is not JSON or empty
+                }
+                throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+            
+            if (data.status === 'completed') {
+                const result = data.result;
+                if (Array.isArray(result)) {
+                    return result;
+                } else if (typeof result === 'string') {
+                    return [result];
+                } else {
+                    throw new Error("Invalid result format from progress API.");
+                }
+            } else if (data.status && data.status.startsWith('in_progress')) {
+                onProgress(data.status);
+            } else if (data.status === 'failed') {
+                 throw new Error(data.result || 'Image generation failed on the backend.');
+            }
+        } catch (error) {
+            console.error("Polling failed:", error);
+            if (error instanceof TypeError) {
+                 throw new Error(`Backend communication failed during progress check. Is the server running?`);
+            }
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error("An unknown error occurred during progress polling.");
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+    
+    throw new Error("Image generation timed out.");
+};
+
 
 /**
  * Generates an image by making a GET request to the backend API.
+ * This now polls for progress.
  * @param prompt The main prompt.
  * @param negativePrompt The negative prompt.
  * @param width The width of the image.
@@ -33,6 +89,7 @@ const getApiBaseUrl = (): string => {
  * @param seed The seed for reproducibility.
  * @param batchSize The number of images to generate in parallel on the backend.
  * @param inferenceCount The total number of images to generate.
+ * @param onProgress Callback function to report progress.
  * @returns An array of URLs for the generated image blobs.
  * @throws An error if the request fails or the response is not a valid image.
  */
@@ -45,21 +102,22 @@ export const generateImage = async (
     guidanceScale: number,
     seed: number | null,
     batchSize: number,
-    inferenceCount: number
+    inferenceCount: number,
+    onProgress: (progress: string) => void
 ): Promise<string[]> => {
     if (!prompt.trim()) {
         throw new Error("Prompt cannot be empty.");
     }
 
+    const totalImages = batchSize * inferenceCount;
     const params = new URLSearchParams({
         prompt,
         negative_prompt: negativePrompt,
         width: String(width),
         height: String(height),
-        steps: String(steps),
+        num_inference_steps: String(steps),
         guidance_scale: String(guidanceScale),
-        batch_size: String(batchSize),
-        inference_size: String(inferenceCount),
+        inference_size: String(totalImages),
     });
 
     if (seed !== null && seed >= 0) {
@@ -83,11 +141,13 @@ export const generateImage = async (
             throw new Error(errorMessage);
         }
         
-        const imageHashes = await response.json();
+        const reference = await response.text();
 
-        if (!Array.isArray(imageHashes)) {
-            throw new Error("Backend did not return a valid list of images. Please check the API response.");
+        if (!reference) {
+            throw new Error("Backend did not return a valid reference for image generation.");
         }
+
+        const imageHashes = await pollProgress(reference, onProgress);
         
         if (imageHashes.length === 0) {
             return [];

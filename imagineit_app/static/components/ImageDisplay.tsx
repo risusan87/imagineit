@@ -8,6 +8,7 @@ interface ImageDisplayProps {
     isLoading: boolean;
     error: string | null;
     prompt: string;
+    progress: string | null;
 }
 
 const ImagePlaceholder: React.FC = () => (
@@ -73,7 +74,7 @@ const Filmstrip: React.FC<{
 };
 
 
-const ImageDisplay: React.FC<ImageDisplayProps> = ({ generatedImages, isLoading, error, prompt }) => {
+const ImageDisplay: React.FC<ImageDisplayProps> = ({ generatedImages, isLoading, error, prompt, progress }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
 
     // Reset index when new images are generated
@@ -113,7 +114,7 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ generatedImages, isLoading,
     return (
         <div className="bg-gray-800/50 rounded-2xl w-full flex flex-col min-h-[550px] lg:h-[calc(100vh-4rem)] overflow-hidden lg:sticky lg:top-8">
             <div className="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
-                {isLoading && <LoadingSpinner />}
+                {isLoading && <LoadingSpinner progress={progress} />}
                 {!isLoading && error && <ErrorDisplay error={error} />}
                 {!isLoading && !error && !generatedImages && <ImagePlaceholder />}
                 {!isLoading && !error && generatedImages && generatedImages.length === 0 && (
