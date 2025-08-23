@@ -110,6 +110,9 @@ export const generateImage = async (
     }
 
     const totalImages = batchSize * inferenceCount;
+
+    // Verified: The parameters below match the backend signature:
+    // imagine(prompt, negative_prompt, width, height, num_inference_steps, guidance_scale, seed, inference_size)
     const params = new URLSearchParams({
         prompt,
         negative_prompt: negativePrompt,
