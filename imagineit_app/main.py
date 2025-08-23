@@ -192,7 +192,7 @@ def imagine_progress(reference: str):
     return MODEL.progress(reference)
 
 @app.get("/api/v1/lora-mount")
-def lora_mount(loras: list[str], adapter_weights: list[int]=None):
+def lora_mount(loras: list[str], adapter_weights: list[float]=None):
     for i, lora in enumerate(loras):
         lora += ".safetensors"
         if not os.path.exists(lora):
