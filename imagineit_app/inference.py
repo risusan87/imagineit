@@ -25,7 +25,7 @@ class SDXLInferenceHelper:
             gc.collect()    
             with torch.no_grad():
                 torch.cuda.empty_cache()
-
+        self._pipes = []
         # TODO: Support other than cuda
         if torch.cuda.is_available():
             gpu_count = torch.cuda.device_count()
