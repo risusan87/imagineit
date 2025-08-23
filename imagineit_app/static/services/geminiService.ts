@@ -91,7 +91,8 @@ const pollProgress = async (reference: string, onProgress: (progress: string) =>
  * @param batchSize The number of images to generate in parallel on the backend.
  * @param inferenceCount The total number of images to generate.
  * @param onProgress Callback function to report progress.
- * @returns An array of URLs for the generated image blobs.
+ * @param onImageGenerated Callback function called with a blob URL for each completed image.
+ * @returns A promise that resolves when all image generation and fetching is complete.
  * @throws An error if the request fails or the response is not a valid image.
  */
 export const generateImage = async (
@@ -104,8 +105,9 @@ export const generateImage = async (
     seed: number | null,
     batchSize: number,
     inferenceCount: number,
-    onProgress: (progress: string) => void
-): Promise<string[]> => {
+    onProgress: (progress: string) => void,
+    onImageGenerated: (imageUrl: string) => void
+): Promise<void> => {
     if (!prompt.trim()) {
         throw new Error("Prompt cannot be empty.");
     }
@@ -161,26 +163,26 @@ export const generateImage = async (
             onProgress(formattedProgress);
         };
         
-        const pollingPromises = references.map((ref, index) => {
+        const allPromises = references.map((ref, index) => {
             const individualOnProgress = (status: string) => {
                 progressUpdater(index, status);
             };
-            return pollProgress(ref, individualOnProgress);
+            // pollProgress returns a promise that resolves with an array of image hashes
+            return pollProgress(ref, individualOnProgress)
+                .then(imageHashes => {
+                    // For each hash, fetch the image and call the callback
+                    const imageFetchPromises = imageHashes.map(hash =>
+                        fetchImageById(hash).then(imageUrl => {
+                            onImageGenerated(imageUrl);
+                        })
+                    );
+                    // Return a promise that resolves when all images for this reference are fetched
+                    return Promise.all(imageFetchPromises);
+                });
         });
         
-        const imageHashesArrays = await Promise.all(pollingPromises);
-        const imageHashes = imageHashesArrays.flat();
-
-        if (imageHashes.length === 0) {
-            return [];
-        }
-
-        // Fetch all images concurrently from their hashes
-        const imageUrls = await Promise.all(
-            imageHashes.map(hash => fetchImageById(hash))
-        );
-        
-        return imageUrls;
+        // Wait for all polling and image fetching to complete before exiting the function
+        await Promise.all(allPromises);
 
     } catch (error) {
         console.error("Image generation failed:", error);

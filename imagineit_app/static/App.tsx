@@ -131,15 +131,19 @@ const App: React.FC = () => {
 
         setIsLoading(true);
         setError(null);
-        setGeneratedImages(null);
+        setGeneratedImages([]);
         setProgress(null);
 
         const seedForGeneration = alwaysRandomSeed
             ? Math.floor(Math.random() * 2**32)
             : seed;
 
+        const handleNewImage = (imageUrl: string) => {
+            setGeneratedImages(prevImages => [...(prevImages || []), imageUrl]);
+        };
+
         try {
-            const imageUrls = await generateImage(
+            await generateImage(
                 prompt,
                 negativePrompt,
                 width || DEFAULT_WIDTH,
@@ -149,9 +153,9 @@ const App: React.FC = () => {
                 seedForGeneration,
                 batchSize || 1,
                 inferenceCount || 1,
-                setProgress
+                setProgress,
+                handleNewImage
             );
-            setGeneratedImages(imageUrls);
         } catch (err) {
             if (err instanceof Error) {
                 setError(err.message);
