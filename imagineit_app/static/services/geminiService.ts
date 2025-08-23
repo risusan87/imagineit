@@ -1,6 +1,6 @@
 import { getCookie } from '../utils/cookies';
 import { COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN } from '../constants';
-import { LoraModelConfig } from '../types';
+import { LoraModelConfig, ImageGeneration } from '../types';
 
 /**
  * Determines the base URL for API requests based on user settings.
@@ -21,65 +21,8 @@ const getApiBaseUrl = (): string => {
     return ''; // For combined mode, use relative paths
 };
 
-export const pollProgress = async (reference: string, onProgress: (progress: string) => void): Promise<string[]> => {
-    const baseUrl = getApiBaseUrl();
-    const progressUrl = `${baseUrl}/api/v1/imagine/progress/${reference}`;
-    
-    const pollTimeout = 300000; // 5 minutes
-    // Polling interval is set to 1 second (1000ms) as requested for status updates.
-    const pollInterval = 1000; // 1 second
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < pollTimeout) {
-        try {
-            const response = await fetch(progressUrl);
-            if (!response.ok) {
-                let errorMessage = `Progress check failed with status ${response.status}`;
-                 try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.detail || errorMessage;
-                } catch (e) {
-                    // Ignore if response body is not JSON or empty
-                }
-                throw new Error(errorMessage);
-            }
-
-            const data = await response.json();
-            
-            if (data.status === 'completed') {
-                const result = data.result;
-                if (Array.isArray(result)) {
-                    return result;
-                } else if (typeof result === 'string') {
-                    return [result];
-                } else {
-                    throw new Error("Invalid result format from progress API.");
-                }
-            } else if (data.status && data.status.startsWith('in_progress')) {
-                onProgress(data.status);
-            } else if (data.status === 'failed') {
-                 throw new Error(data.result || 'Image generation failed on the backend.');
-            }
-        } catch (error) {
-            console.error("Polling failed:", error);
-            if (error instanceof TypeError) {
-                 throw new Error(`Backend communication failed during progress check. Is the server running?`);
-            }
-            if (error instanceof Error) {
-                throw error;
-            }
-            throw new Error("An unknown error occurred during progress polling.");
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-    }
-    
-    throw new Error("Image generation timed out.");
-};
-
-
 /**
- * Initiates an image generation job and returns the references for polling.
+ * Initiates an image generation job via Server-Sent Events (SSE) and streams progress.
  * @param prompt The main prompt.
  * @param negativePrompt The negative prompt.
  * @param width The width of the image.
@@ -89,10 +32,10 @@ export const pollProgress = async (reference: string, onProgress: (progress: str
  * @param seed The seed for reproducibility.
  * @param batchSize The number of images to generate in parallel on the backend.
  * @param inferenceCount The total number of images to generate.
- * @returns A promise that resolves to an array of string references for the generation jobs.
- * @throws An error if the request fails.
+ * @param onUpdate Callback function to receive progress updates for each image.
+ * @param onError Callback function to handle any errors during the stream.
  */
-export const initiateGeneration = async (
+export const generateImagesStream = async (
     prompt: string,
     negativePrompt: string,
     width: number,
@@ -101,10 +44,13 @@ export const initiateGeneration = async (
     guidanceScale: number,
     seed: number | null,
     batchSize: number,
-    inferenceCount: number
-): Promise<string[]> => {
+    inferenceCount: number,
+    onUpdate: (updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[]) => void,
+    onError: (error: Error) => void,
+): Promise<void> => {
     if (!prompt.trim()) {
-        throw new Error("Prompt cannot be empty.");
+        onError(new Error("Prompt cannot be empty."));
+        return;
     }
 
     const totalImages = batchSize * inferenceCount;
@@ -139,24 +85,69 @@ export const initiateGeneration = async (
             }
             throw new Error(errorMessage);
         }
-        
-        const references = await response.json();
 
-        if (!Array.isArray(references) || references.some(r => typeof r !== 'string')) {
-            throw new Error("Backend did not return a valid list of references for image generation.");
+        if (!response.body) {
+            throw new Error('Response body is missing.');
         }
 
-        return references;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const completedIndices = new Set<number>();
 
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+                break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop() || ''; // Keep the last partial message in buffer
+
+            for (const part of parts) {
+                if (part.startsWith('data: ')) {
+                    const jsonData = part.substring(6);
+                    if (jsonData.trim()) {
+                        try {
+                            const statusList = JSON.parse(jsonData);
+                            if (Array.isArray(statusList)) {
+                                const updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[] = [];
+
+                                statusList.forEach((status: any, index: number) => {
+                                    if (completedIndices.has(index)) return;
+
+                                    if (status.status === 'completed') {
+                                        completedIndices.add(index);
+                                        const hash = Array.isArray(status.result) ? status.result[0] : status.result;
+                                        updates.push({ index, data: { status: 'completed', hash, progressText: 'Completed' } });
+                                    } else if (status.status && status.status.startsWith('in_progress')) {
+                                        updates.push({ index, data: { status: 'generating', progressText: status.status.replace('in_progress: ', '') } });
+                                    } else if (status.status === 'failed') {
+                                        completedIndices.add(index);
+                                        updates.push({ index, data: { status: 'failed', progressText: status.result || 'Generation failed' } });
+                                    }
+                                });
+
+                                if (updates.length > 0) {
+                                    onUpdate(updates);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Failed to parse SSE data chunk:', jsonData, e);
+                        }
+                    }
+                }
+            }
+        }
     } catch (error) {
-        console.error("Image generation failed:", error);
-        if (error instanceof TypeError) {
-             throw new Error(`Backend communication failed. Is the server running?`);
-        }
+        console.error("Image generation stream failed:", error);
         if (error instanceof Error) {
-            throw error;
+            if (error.name === 'AbortError') return; // Ignore abort errors
+            onError(error);
+        } else {
+            onError(new Error('An unknown error occurred during image generation stream.'));
         }
-        throw new Error("An unknown error occurred during image generation.");
     }
 };
 

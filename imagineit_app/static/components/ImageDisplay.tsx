@@ -1,16 +1,14 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorDisplay from './ErrorDisplay';
 import { ImageGeneration } from '../types';
-import { pollProgress, fetchImageById } from '../services/geminiService';
 
 interface ImageDisplayProps {
     imageGenerations: ImageGeneration[];
     isBatchInProgress: boolean;
     error: string | null;
     prompt: string;
-    onUpdate: (index: number, data: Partial<ImageGeneration>) => void;
 }
 
 const ImagePlaceholder: React.FC = () => (
@@ -41,7 +39,7 @@ const FilmstripThumbnail: React.FC<{
                 <img src={generation.imageUrl} alt={`Thumbnail for image ${index + 1}`} className="w-full h-full object-cover" />
             ) : (
                 <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-400">
-                    {generation.status === 'generating' ? 
+                    {generation.status === 'generating' || (generation.status === 'completed' && !generation.imageUrl) ? 
                         <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -78,7 +76,7 @@ const Filmstrip: React.FC<{
             <div ref={scrollContainerRef} className="flex justify-center items-center h-full gap-2 overflow-x-auto">
                 {generations.map((gen, index) => (
                     <FilmstripThumbnail
-                        key={gen.reference}
+                        key={gen.id}
                         generation={gen}
                         index={index}
                         isCurrent={index === currentIndex}
@@ -91,85 +89,22 @@ const Filmstrip: React.FC<{
 };
 
 
-const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchInProgress, error, prompt, onUpdate }) => {
+const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchInProgress, error, prompt }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
-    const pollingRefs = useRef<Set<string>>(new Set());
     const imageGenerationsRef = useRef(imageGenerations);
     imageGenerationsRef.current = imageGenerations;
 
-    const pollVisibleImages = useCallback(() => {
-        // This function implements the core logic for image generation polling,
-        // ensuring efficient and responsive updates as requested.
-        if (!isBatchInProgress) return;
-
-        // 1. Define Selective Polling Window
-        // To avoid overwhelming the server, we only poll for images currently
-        // visible in the filmstrip, plus a few neighbors.
-        const POLLING_RADIUS = 3; 
-        const start = Math.max(0, currentIndex - POLLING_RADIUS);
-        const end = Math.min(imageGenerations.length, currentIndex + POLLING_RADIUS + 1);
-
-        // 2. Iterate and Poll Queued Images within the Window
-        for (let i = start; i < end; i++) {
-            const generation = imageGenerations[i];
-            
-            // 3. Start Polling Only If Necessary
-            // A polling loop is only initiated for images that are in the 'queued'
-            // state. This prevents re-polling completed or failed images.
-            // The `pollingRefs` set prevents duplicate polling loops for the same image.
-            if (generation.status === 'queued' && !pollingRefs.current.has(generation.reference)) {
-                pollingRefs.current.add(generation.reference);
-                onUpdate(i, { status: 'generating', progressText: 'Waiting in queue...' });
-
-                // The pollProgress service function checks the backend status every 1 second.
-                pollProgress(generation.reference, (progressText) => {
-                    onUpdate(i, { progressText: progressText.replace('in_progress: ', '') });
-                })
-                .then(async (imageHashes) => {
-                    // 4. On Completion: Retrieve and Store Image
-                    // When the backend status is "completed", the image hash is returned.
-                    // We then fetch the final image data.
-                    const hash = imageHashes[0];
-                    const imageUrl = await fetchImageById(hash);
-
-                    // The resulting blob URL is stored in the main application state ("in memory")
-                    // and the status is updated. The UI will then display the final image.
-                    onUpdate(i, { status: 'completed', imageUrl, hash, progressText: 'Completed' });
-                })
-                .catch((err) => {
-                    // Handle failures gracefully.
-                    onUpdate(i, { status: 'failed', progressText: err.message });
-                })
-                .finally(() => {
-                    // 5. Stop Polling
-                    // Polling for this image stops automatically because its status is no longer
-                    // 'queued'. We also clean up the reference lock to allow for potential future re-polling logic.
-                    pollingRefs.current.delete(generation.reference);
-                });
-            }
-        }
-    }, [currentIndex, imageGenerations, onUpdate, isBatchInProgress]);
-
-    useEffect(() => {
-        pollVisibleImages();
-    }, [pollVisibleImages]);
-
-    // Clean up object URLs when the component unmounts.
-    // This is triggered when a new generation starts because the parent `App` component
-    // provides a new `key`, forcing this component to unmount and remount.
-    // This prevents premature disposal of blob URLs during a single generation batch,
-    // ensuring generated images remain in memory and viewable.
+    // Clean up object URLs when the component unmounts or is re-keyed.
+    // This prevents memory leaks by revoking blob URLs that are no longer needed.
     useEffect(() => {
         return () => {
-            // On cleanup, iterate through the list of images held in the ref
-            // and revoke their blob URLs to prevent memory leaks.
             imageGenerationsRef.current.forEach(gen => {
                 if (gen.imageUrl && gen.imageUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(gen.imageUrl);
                 }
             });
         };
-    }, []); // An empty dependency array ensures this cleanup runs only on unmount.
+    }, []); // Empty dependency array ensures this runs only on unmount.
 
     const handleNext = () => {
         if (currentIndex < imageGenerations.length - 1) {
@@ -179,7 +114,7 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchIn
     
     const handlePrev = () => {
         if (currentIndex > 0) {
-            setCurrentIndex(prev => prev - 1);
+            setCurrentIndex(prev => prev + 1);
         }
     };
 
@@ -212,13 +147,16 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchIn
                     if (currentGeneration) {
                          switch (currentGeneration.status) {
                             case 'completed':
-                                return (
-                                    <img 
-                                        src={currentGeneration.imageUrl!} 
-                                        alt={`${prompt} (${currentIndex + 1} of ${totalCount})`}
-                                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                                    />
-                                );
+                                if (currentGeneration.imageUrl) {
+                                    return (
+                                        <img 
+                                            src={currentGeneration.imageUrl} 
+                                            alt={`${prompt} (${currentIndex + 1} of ${totalCount})`}
+                                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                                        />
+                                    );
+                                }
+                                // Fallthrough to show spinner while fetching the final image
                             case 'generating':
                                 return <LoadingSpinner progress={currentGeneration.progressText} />;
                              case 'failed':

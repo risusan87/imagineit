@@ -7,9 +7,10 @@ from io import BytesIO
 from pathlib import Path
 import zipfile
 from PIL import Image
+import json
 
 from fastapi import FastAPI
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 # from imagineit_app.dataio import save_img, load_img_metadata, load_img
@@ -185,7 +186,23 @@ def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_infe
             seed=seed if inference_size == 1 else int.from_bytes(os.urandom(8), signed=False),
         )
         references.append(reference)
-    return references
+    def retrieves(references):
+        status_list = []
+        while True:
+            for status_ref in references:
+                status = MODEL.progress(status_ref)
+                status_list.append(status)
+            if all(status['status'] == 'completed' for status in status_list):
+                break
+            time.sleep(0.1)
+            yield f"data: {json.dumps(status_list)}\n\n"
+    headers = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no", # For Nginx
+    }
+    return StreamingResponse(retrieves(references), headers=headers)
 
 @app.get("/api/v1/imagine/progress/{reference}")
 def imagine_progress(reference: str):
