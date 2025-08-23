@@ -41,7 +41,7 @@ class SDXLInferenceHelper:
                     torch_dtype=torch.float16,
                 ))
                 self._pipe_free_flag.append(threading.Event())
-                self._pipes[dev_name].to(f"cuda:{dev_name}")
+                self._pipes[dev_name] = self._pipes[dev_name].to(f"cuda:{dev_name}")
         else:
             print("NO CUDA GPUs FOUND! The model will be loaded on CPU")
             print("Loading Stable Diffusion on CPU is NOT recommended, but harmless. It will take space in system RAM for a lot less efficient inference compared to GPU")
@@ -50,7 +50,7 @@ class SDXLInferenceHelper:
                 torch_dtype=torch.float32
             ))
             self._pipe_free_flag.append(threading.Event())
-            self._pipes[0].to("cpu")
+            self._pipes[0] = self._pipes[0].to("cpu")
         if loras:
             for pipe in self._pipes:
                 adapter_names = []
