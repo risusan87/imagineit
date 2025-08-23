@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorDisplay from './ErrorDisplay';
@@ -93,12 +94,6 @@ const Filmstrip: React.FC<{
 const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchInProgress, error, prompt, onUpdate }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const pollingRefs = useRef<Set<string>>(new Set());
-
-    // Reset index when a new batch starts
-    useEffect(() => {
-        setCurrentIndex(0);
-    }, [imageGenerations.length > 0 && imageGenerations[0].reference]);
-
 
     // Effect for polling visible images
     useEffect(() => {
