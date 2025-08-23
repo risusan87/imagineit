@@ -197,11 +197,11 @@ class LoRAPayload(BaseModel):
 
 @app.post("/api/v1/lora-mount")
 def lora_mount(lora: LoRAPayload):
-    for i, lora in enumerate(lora.loras):
-        lora += ".safetensors"
-        if not os.path.exists(lora):
+    for i, lora_path in enumerate(lora.loras):
+        lora_path += ".safetensors"
+        if not os.path.exists(lora_path):
             return {"error": "Lora file not found."}
-        lora.loras[i] = lora
+        lora.loras[i] = lora_path
     MODEL.load_model(lora.loras, adapter_weights=lora.adapter_weights)
     return {"status": "success"}
 
