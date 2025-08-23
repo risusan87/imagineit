@@ -77,10 +77,18 @@ const Filmstrip: React.FC<{
 const ImageDisplay: React.FC<ImageDisplayProps> = ({ generatedImages, isLoading, error, prompt, progress }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
 
-    // Reset index when new images are generated
+    // Effect to robustly manage the current index during real-time updates.
     useEffect(() => {
-        setCurrentIndex(0);
-    }, [generatedImages]);
+        // If the array of images is cleared, it's a new generation, so reset the index.
+        if (generatedImages && generatedImages.length === 0) {
+            setCurrentIndex(0);
+        }
+        // If the current index becomes invalid (e.g. after an operation), move to the last valid index.
+        if (generatedImages && currentIndex >= generatedImages.length) {
+            setCurrentIndex(Math.max(0, generatedImages.length - 1));
+        }
+    }, [generatedImages, currentIndex]);
+
 
     // Clean up the object URLs when the component unmounts or the images change
     useEffect(() => {
@@ -109,44 +117,56 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ generatedImages, isLoading,
     };
 
     const currentImage = generatedImages ? generatedImages[currentIndex] : null;
-    const hasImages = !isLoading && !error && generatedImages && generatedImages.length > 0;
+    const hasAnyImages = generatedImages && generatedImages.length > 0;
 
     return (
         <div className="bg-gray-800/50 rounded-2xl w-full flex flex-col min-h-[550px] lg:h-[calc(100vh-4rem)] overflow-hidden lg:sticky lg:top-8">
             <div className="flex-grow flex items-center justify-center p-4 relative overflow-hidden">
-                {isLoading && <LoadingSpinner progress={progress} />}
-                {!isLoading && error && <ErrorDisplay error={error} />}
-                {!isLoading && !error && !generatedImages && <ImagePlaceholder />}
-                {!isLoading && !error && generatedImages && generatedImages.length === 0 && (
-                    <div className="text-center text-gray-400">
-                        <h3 className="text-xl font-semibold">No images were generated.</h3>
-                        <p>Try adjusting your prompt or parameters.</p>
+                {/* Main Content Logic */}
+                {(() => {
+                    if (hasAnyImages && currentImage) {
+                        return (
+                            <>
+                                <img 
+                                    src={currentImage} 
+                                    alt={`${prompt} (${currentIndex + 1} of ${generatedImages?.length})` || 'Generated image'} 
+                                    className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                                />
+                                {generatedImages && generatedImages.length > 1 && (
+                                     <>
+                                        <button onClick={handlePrev} disabled={currentIndex === 0} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                                        </button>
+                                        <button onClick={handleNext} disabled={currentIndex >= generatedImages.length - 1} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                        </button>
+                                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-3 py-1 rounded-full">
+                                            {currentIndex + 1} / {generatedImages.length}
+                                        </div>
+                                    </>
+                                )}
+                            </>
+                        );
+                    }
+                    if (isLoading) {
+                        return <LoadingSpinner progress={progress} />;
+                    }
+                    if (error) {
+                        return <ErrorDisplay error={error} />;
+                    }
+                    // Default state before any generation
+                    return <ImagePlaceholder />;
+                })()}
+
+                {/* Persistent Loading Indicator (when images are already showing) */}
+                {isLoading && hasAnyImages && (
+                    <div className="absolute top-4 right-4 bg-black/60 p-3 rounded-lg text-white flex items-center gap-3 animate-pulse">
+                        <div className="w-6 h-6 border-2 border-dashed rounded-full animate-spin border-purple-400"></div>
+                        <span className="text-sm font-semibold">Generating...</span>
                     </div>
                 )}
-                {hasImages && currentImage && (
-                    <>
-                        <img 
-                            src={currentImage} 
-                            alt={`${prompt} (${currentIndex + 1} of ${generatedImages?.length})` || 'Generated image'} 
-                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                        />
-                        {generatedImages && generatedImages.length > 1 && (
-                             <>
-                                <button onClick={handlePrev} disabled={currentIndex === 0} className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                                </button>
-                                <button onClick={handleNext} disabled={currentIndex >= generatedImages.length - 1} className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 text-white p-3 rounded-full hover:bg-black/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                </button>
-                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 text-white text-sm px-3 py-1 rounded-full">
-                                    {currentIndex + 1} / {generatedImages.length}
-                                </div>
-                            </>
-                        )}
-                    </>
-                )}
             </div>
-            {hasImages && generatedImages.length > 1 && (
+            {hasAnyImages && generatedImages.length > 1 && (
                 <Filmstrip
                     images={generatedImages}
                     currentIndex={currentIndex}
