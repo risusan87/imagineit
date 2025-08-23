@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorDisplay from './ErrorDisplay';
@@ -95,32 +94,48 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchIn
     const [currentIndex, setCurrentIndex] = useState(0);
     const pollingRefs = useRef<Set<string>>(new Set());
 
-    // Effect for polling visible images
+    // This effect implements the core logic for image generation polling,
+    // ensuring efficient and responsive updates as requested.
     useEffect(() => {
+        // Polling only runs if there's an active batch generation.
         if (!isBatchInProgress) return;
 
-        const POLLING_RADIUS = 3;
+        // 1. Selective Polling: To avoid overwhelming the server, we only poll for
+        //    images that are currently "visible" in the filmstrip. We define this
+        //    "window" as a radius around the currently selected image.
+        const POLLING_RADIUS = 3; // Poll for the selected image +/- 3 neighbors.
         const start = Math.max(0, currentIndex - POLLING_RADIUS);
         const end = Math.min(imageGenerations.length, currentIndex + POLLING_RADIUS + 1);
 
         for (let i = start; i < end; i++) {
             const generation = imageGenerations[i];
+            
+            // 2. State-based Polling: We only initiate a polling loop for images
+            //    that are in the 'queued' state. Once an image is completed or fails,
+            //    it is no longer polled, saving resources. The `pollingRefs` set
+            //    prevents duplicate polling loops for the same image reference.
             if (generation.status === 'queued' && !pollingRefs.current.has(generation.reference)) {
                 pollingRefs.current.add(generation.reference);
                 onUpdate(i, { status: 'generating', progressText: 'Waiting in queue...' });
 
+                // The pollProgress service function checks the status every 1 second.
                 pollProgress(generation.reference, (progressText) => {
                     onUpdate(i, { progressText: progressText.replace('in_progress: ', '') });
                 })
                 .then(async (imageHashes) => {
                     const hash = imageHashes[0];
+                    // 3. Store and Display: When an image is 'completed', its hash is used
+                    //    to fetch the final image. The resulting blob URL is stored in the
+                    //    main application state ("in memory") and displayed.
                     const imageUrl = await fetchImageById(hash);
                     onUpdate(i, { status: 'completed', imageUrl, hash, progressText: 'Completed' });
                 })
                 .catch((err) => {
+                    // Handle failures gracefully.
                     onUpdate(i, { status: 'failed', progressText: err.message });
                 })
                 .finally(() => {
+                    // Clean up the reference to allow for re-polling if necessary in future logic.
                     pollingRefs.current.delete(generation.reference);
                 });
             }
