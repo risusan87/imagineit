@@ -144,14 +144,32 @@ export const generateImage = async (
             throw new Error(errorMessage);
         }
         
-        const reference = await response.text();
+        const references = await response.json();
 
-        if (!reference) {
-            throw new Error("Backend did not return a valid reference for image generation.");
+        if (!Array.isArray(references) || references.some(r => typeof r !== 'string')) {
+            throw new Error("Backend did not return a valid list of references for image generation.");
         }
 
-        const imageHashes = await pollProgress(reference, onProgress);
+        const progresses: { [key: number]: string } = {};
+        const progressUpdater = (index: number, status: string) => {
+            progresses[index] = status;
+            const formattedProgress = Object.entries(progresses)
+                .sort(([a], [b]) => Number(a) - Number(b))
+                .map(([i, p]) => `Image ${Number(i) + 1}: ${p.replace('in_progress: ', '')}`)
+                .join(' | ');
+            onProgress(formattedProgress);
+        };
         
+        const pollingPromises = references.map((ref, index) => {
+            const individualOnProgress = (status: string) => {
+                progressUpdater(index, status);
+            };
+            return pollProgress(ref, individualOnProgress);
+        });
+        
+        const imageHashesArrays = await Promise.all(pollingPromises);
+        const imageHashes = imageHashesArrays.flat();
+
         if (imageHashes.length === 0) {
             return [];
         }
