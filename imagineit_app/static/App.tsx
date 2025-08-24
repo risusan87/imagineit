@@ -163,34 +163,42 @@ const App: React.FC = () => {
             : seed;
 
         const handleStreamUpdate = (updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[]) => {
-            updates.forEach(({ index, data }) => {
-                if (data.status === 'completed' && data.hash) {
-                    const hash = data.hash;
+            const fetchesToPerform: { index: number; hash: string }[] = [];
 
-                    // If we have already initiated a fetch for this hash, ignore.
-                    if (fetchedHashesRef.current.has(hash)) {
-                        return;
+            // Atomically apply all synchronous state updates from the stream in one go.
+            setImageGenerations(currentGenerations => {
+                const newGenerations = [...currentGenerations];
+        
+                updates.forEach(({ index, data }) => {
+                    if (data.status === 'completed' && data.hash) {
+                        const hash = data.hash;
+                        if (!fetchedHashesRef.current.has(hash)) {
+                            // Queue the fetch to be performed after this state update.
+                            fetchesToPerform.push({ index, hash });
+                            // Apply the intermediate "fetching" state.
+                            newGenerations[index] = { ...newGenerations[index], ...data, status: 'completed', progressText: 'Fetching final image...' };
+                        }
+                    } else {
+                        // Apply all other states like 'generating', 'failed', etc.
+                        newGenerations[index] = { ...newGenerations[index], ...data };
                     }
-
-                    // Mark this hash as being fetched to prevent duplicates.
-                    fetchedHashesRef.current.add(hash);
-                    
-                    handleUpdateGeneration(index, { ...data, status: 'completed', progressText: 'Fetching final image...' });
-                    
-                    fetchImageById(hash)
-                        .then(imageUrl => {
-                             // Be explicit with the final state update to ensure the UI
-                             // correctly shows the image instead of the loading spinner.
-                             handleUpdateGeneration(index, { status: 'completed', imageUrl, progressText: 'Completed' });
-                        })
-                        .catch(err => {
-                            console.error(`Failed to fetch image for hash ${hash}:`, err);
-                            handleUpdateGeneration(index, { status: 'failed', progressText: 'Failed to retrieve final image.' });
-                        });
-                } else {
-                    // Handle other status updates like 'generating' or 'failed' from the stream.
-                    handleUpdateGeneration(index, data);
-                }
+                });
+                return newGenerations;
+            });
+        
+            // After the state update has been queued, initiate the async fetches.
+            fetchesToPerform.forEach(({ index, hash }) => {
+                // Mark as fetching immediately to prevent duplicates from subsequent stream events.
+                fetchedHashesRef.current.add(hash);
+        
+                fetchImageById(hash)
+                    .then(imageUrl => {
+                        handleUpdateGeneration(index, { status: 'completed', imageUrl, progressText: 'Completed' });
+                    })
+                    .catch(err => {
+                        console.error(`Failed to fetch image for hash ${hash}:`, err);
+                        handleUpdateGeneration(index, { status: 'failed', progressText: 'Failed to retrieve final image.' });
+                    });
             });
         };
         
