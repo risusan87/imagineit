@@ -179,7 +179,9 @@ const App: React.FC = () => {
                     
                     fetchImageById(hash)
                         .then(imageUrl => {
-                             handleUpdateGeneration(index, { imageUrl, progressText: 'Completed' });
+                             // Be explicit with the final state update to ensure the UI
+                             // correctly shows the image instead of the loading spinner.
+                             handleUpdateGeneration(index, { status: 'completed', imageUrl, progressText: 'Completed' });
                         })
                         .catch(err => {
                             console.error(`Failed to fetch image for hash ${hash}:`, err);
