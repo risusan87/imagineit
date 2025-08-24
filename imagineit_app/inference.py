@@ -71,6 +71,7 @@ class SDXLInferenceHelper:
                 if not pipe_flag.is_set():
                     pipe_flag.set()
                     available_pipe = i
+                    print(f"Using pipe name {i}")
                     break
         self._requests[reference]["status"] = "started"
         pipe = self._pipes[available_pipe]
