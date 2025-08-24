@@ -164,22 +164,25 @@ const App: React.FC = () => {
 
         const handleStreamUpdate = (updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[]) => {
             const fetchesToPerform: { index: number; hash: string }[] = [];
-
+        
             // Atomically apply all synchronous state updates from the stream in one go.
             setImageGenerations(currentGenerations => {
                 const newGenerations = [...currentGenerations];
         
                 updates.forEach(({ index, data }) => {
+                    // FIX: Add a bounds check to prevent the array from growing unexpectedly.
+                    if (index < 0 || index >= newGenerations.length) {
+                        console.warn(`Stream update received for out-of-bounds index: ${index}. Ignoring.`);
+                        return; // Skip this update
+                    }
+        
                     if (data.status === 'completed' && data.hash) {
                         const hash = data.hash;
                         if (!fetchedHashesRef.current.has(hash)) {
-                            // Queue the fetch to be performed after this state update.
                             fetchesToPerform.push({ index, hash });
-                            // Apply the intermediate "fetching" state.
                             newGenerations[index] = { ...newGenerations[index], ...data, status: 'completed', progressText: 'Fetching final image...' };
                         }
                     } else {
-                        // Apply all other states like 'generating', 'failed', etc.
                         newGenerations[index] = { ...newGenerations[index], ...data };
                     }
                 });
@@ -188,7 +191,6 @@ const App: React.FC = () => {
         
             // After the state update has been queued, initiate the async fetches.
             fetchesToPerform.forEach(({ index, hash }) => {
-                // Mark as fetching immediately to prevent duplicates from subsequent stream events.
                 fetchedHashesRef.current.add(hash);
         
                 fetchImageById(hash)
