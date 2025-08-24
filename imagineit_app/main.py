@@ -18,7 +18,7 @@ from imagineit_app.imdb import write_v2, read_img_v2, read_metadata_v2, del_img_
 from imagineit_app.zrok import zrok_enable, zrok_disable, zrok_share
 from imagineit_app.resources import register_resources
 
-from imagineit_app.inference import MODEL
+from imagineit_app.inference import MODEL, GLOBAL_DATABASE_THREAD_LOCK
 
 
 app = FastAPI()
@@ -81,7 +81,8 @@ def delete_image(hash: str):
     """
     Delete an image by its hash
     """
-    success = del_img_v2(hash)
+    with GLOBAL_DATABASE_THREAD_LOCK:
+        success = del_img_v2(hash)
     if not success:
         return {"error": "Image not found."}
     return {"status": "success"}
@@ -91,7 +92,8 @@ class ImagePayload(BaseModel):
 @app.post("/api/v1/train/image")
 def post_image(width: int, height: int, image: ImagePayload):
     image_bytes = bytes.fromhex(image.image)
-    hash = write_v2(None, image_bytes, -1, "<train_data>", "<train_data>", width, height, -1, -1.0)
+    with GLOBAL_DATABASE_THREAD_LOCK:
+        hash = write_v2(None, image_bytes, -1, "<train_data>", "<train_data>", width, height, -1, -1.0)
     return {"reference": hash}
 
 @app.get("/api/v1/{hash}/prompt")
@@ -116,7 +118,8 @@ def get_label(hash: str):
 
 @app.put("/api/v1/{hash}/label")
 def update_label(hash: str, label: str):
-    write_v2(hash, labeled=True, label=label)
+    with GLOBAL_DATABASE_THREAD_LOCK:
+        write_v2(hash, labeled=True, label=label)
     return {"status": "success"}
 
 class ZipFilePayload(BaseModel):
