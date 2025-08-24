@@ -86,10 +86,7 @@ const App: React.FC = () => {
     const [inferenceCount, setInferenceCount] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_INFERENCE_COUNT, 1));
     
     const [imageGenerations, setImageGenerations] = useState<ImageGeneration[]>([]);
-    const imageGenerationsRef = useRef(imageGenerations);
-    useEffect(() => {
-        imageGenerationsRef.current = imageGenerations;
-    }, [imageGenerations]);
+    const fetchedHashesRef = useRef(new Set<string>());
 
     const [generationKey, setGenerationKey] = useState(0);
     const [isInitiating, setIsInitiating] = useState<boolean>(false);
@@ -158,6 +155,7 @@ const App: React.FC = () => {
         }));
         setImageGenerations(initialGenerations);
         setGenerationKey(key => key + 1);
+        fetchedHashesRef.current.clear(); // Reset for new batch
         setIsInitiating(false);
 
         const seedForGeneration = alwaysRandomSeed
@@ -166,27 +164,29 @@ const App: React.FC = () => {
 
         const handleStreamUpdate = (updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[]) => {
             updates.forEach(({ index, data }) => {
-                const currentImage = imageGenerationsRef.current[index];
-                
-                // If the stream sends a 'completed' status for an image that is already
-                // marked as completed in our state, we can safely ignore it.
-                // This prevents redundant image fetching if the stream sends duplicate events.
-                if (data.status === 'completed' && currentImage?.status === 'completed') {
-                    return;
-                }
-
                 if (data.status === 'completed' && data.hash) {
                     const hash = data.hash;
-                    handleUpdateGeneration(index, { ...data, progressText: 'Fetching final image...' });
+
+                    // If we have already initiated a fetch for this hash, ignore.
+                    if (fetchedHashesRef.current.has(hash)) {
+                        return;
+                    }
+
+                    // Mark this hash as being fetched to prevent duplicates.
+                    fetchedHashesRef.current.add(hash);
+                    
+                    handleUpdateGeneration(index, { ...data, status: 'completed', progressText: 'Fetching final image...' });
+                    
                     fetchImageById(hash)
                         .then(imageUrl => {
-                             handleUpdateGeneration(index, { imageUrl, status: 'completed', progressText: 'Completed' });
+                             handleUpdateGeneration(index, { imageUrl, progressText: 'Completed' });
                         })
                         .catch(err => {
                             console.error(`Failed to fetch image for hash ${hash}:`, err);
                             handleUpdateGeneration(index, { status: 'failed', progressText: 'Failed to retrieve final image.' });
                         });
                 } else {
+                    // Handle other status updates like 'generating' or 'failed' from the stream.
                     handleUpdateGeneration(index, data);
                 }
             });
