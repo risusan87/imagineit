@@ -65,13 +65,13 @@ class SDXLInferenceHelper:
     
     def _generate(self, reference: str, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
         available_pipe = -1
+        print(f"number of pipe is {self._pipe_free_flag}")
         while available_pipe == -1:
             time.sleep(0.1)
             for i, pipe_flag in enumerate(self._pipe_free_flag):
                 if not pipe_flag.is_set():
                     pipe_flag.set()
                     available_pipe = i
-                    print(f"Using pipe name {i}")
                     break
         self._requests[reference]["status"] = "started"
         pipe = self._pipes[available_pipe]
