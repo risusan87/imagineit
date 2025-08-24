@@ -163,38 +163,46 @@ const App: React.FC = () => {
             : seed;
 
         const handleStreamUpdate = (updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[]) => {
-            const fetchesToPerform: { index: number; hash: string }[] = [];
+            const syncUpdates: { index: number; data: Partial<ImageGeneration> }[] = [];
+            const fetchesToStart: { index: number; hash: string }[] = [];
         
-            // Atomically apply all synchronous state updates from the stream in one go.
-            setImageGenerations(currentGenerations => {
-                const newGenerations = [...currentGenerations];
-        
-                updates.forEach(({ index, data }) => {
-                    // FIX: Add a bounds check to prevent the array from growing unexpectedly.
-                    if (index < 0 || index >= newGenerations.length) {
-                        console.warn(`Stream update received for out-of-bounds index: ${index}. Ignoring.`);
-                        return; // Skip this update
+            updates.forEach(({ index, data }) => {
+                if (data.status === 'completed' && data.hash) {
+                    const hash = data.hash;
+                    // Check if we've already started fetching this one to prevent race conditions.
+                    if (!fetchedHashesRef.current.has(hash)) {
+                        fetchesToStart.push({ index, hash });
+                        // Queue a state update to show the user we are fetching.
+                        syncUpdates.push({ index, data: { ...data, status: 'completed', progressText: 'Fetching final image...' } });
                     }
-        
-                    if (data.status === 'completed' && data.hash) {
-                        const hash = data.hash;
-                        if (!fetchedHashesRef.current.has(hash)) {
-                            fetchesToPerform.push({ index, hash });
-                            newGenerations[index] = { ...newGenerations[index], ...data, status: 'completed', progressText: 'Fetching final image...' };
-                        }
-                    } else {
-                        newGenerations[index] = { ...newGenerations[index], ...data };
-                    }
-                });
-                return newGenerations;
+                } else {
+                    // It's a regular progress update.
+                    syncUpdates.push({ index, data });
+                }
             });
         
-            // After the state update has been queued, initiate the async fetches.
-            fetchesToPerform.forEach(({ index, hash }) => {
-                fetchedHashesRef.current.add(hash);
+            // Batch all synchronous state changes (like progress updates) into one render.
+            if (syncUpdates.length > 0) {
+                setImageGenerations(currentGenerations => {
+                    const newGenerations = [...currentGenerations];
+                    syncUpdates.forEach(({ index, data }) => {
+                        // Bounds check to prevent state corruption
+                        if (index >= 0 && index < newGenerations.length) {
+                            newGenerations[index] = { ...newGenerations[index], ...data };
+                        }
+                    });
+                    return newGenerations;
+                });
+            }
+        
+            // After queuing state updates, start the asynchronous fetches.
+            fetchesToStart.forEach(({ index, hash }) => {
+                // Mark as fetching immediately to prevent duplicate requests from subsequent stream events.
+                fetchedHashesRef.current.add(hash); 
         
                 fetchImageById(hash, 0)
                     .then(imageUrl => {
+                        // On success, update the specific image with the final URL.
                         handleUpdateGeneration(index, { status: 'completed', imageUrl, progressText: 'Completed' });
                     })
                     .catch(err => {
