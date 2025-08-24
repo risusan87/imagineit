@@ -187,16 +187,14 @@ def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_infe
         )
         references.append(reference)
     def retrieves(references):
-        status_list = []
         while True:
             for status_ref in references:
-                status = MODEL.progress(status_ref)
-                status_list.append(status)
-            if all(status['status'] == 'completed' for status in status_list):
+                status_ref = MODEL.progress(status_ref)
+            if all(status['status'] == 'completed' for status in references):
                 break
             time.sleep(0.1)
-            yield f"data: {json.dumps(status_list)}\n\n"
-        yield f"data: {json.dumps(status_list)}\n\n"
+            yield f"data: {json.dumps(references)}\n\n"
+        yield f"data: {json.dumps(references)}\n\n"
     headers = {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
