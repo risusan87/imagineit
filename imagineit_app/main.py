@@ -196,6 +196,7 @@ def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_infe
                 break
             time.sleep(0.1)
             yield f"data: {json.dumps(status_list)}\n\n"
+        yield f"data: {json.dumps(status_list)}\n\n"
     headers = {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
