@@ -120,7 +120,8 @@ export const generateImagesStream = async (
 
                                     if (status.status === 'completed') {
                                         completedIndices.add(index);
-                                        const hash = Array.isArray(status.result) ? status.result[0] : status.result;
+                                        // Per user instruction, the image hash is retrieved directly from status.result.
+                                        const hash = status.result;
                                         updates.push({ index, data: { status: 'completed', hash, progressText: 'Completed' } });
                                     } else if (status.status && status.status.startsWith('in_progress')) {
                                         updates.push({ index, data: { status: 'generating', progressText: status.status.replace('in_progress: ', '') } });
