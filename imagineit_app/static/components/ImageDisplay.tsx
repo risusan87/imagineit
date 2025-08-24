@@ -27,6 +27,12 @@ const FilmstripThumbnail: React.FC<{
     isCurrent: boolean;
     onSelect: (index: number) => void;
 }> = ({ generation, index, isCurrent, onSelect }) => {
+    // Defensive check for undefined generation object
+    if (!generation) {
+        return (
+            <div className="relative flex-shrink-0 w-20 h-20 rounded-md bg-gray-800 border-2 border-transparent" />
+        );
+    }
     return (
         <button
             onClick={() => onSelect(index)}
@@ -76,7 +82,7 @@ const Filmstrip: React.FC<{
             <div ref={scrollContainerRef} className="flex justify-center items-center h-full gap-2 overflow-x-auto">
                 {generations.map((gen, index) => (
                     <FilmstripThumbnail
-                        key={gen.id}
+                        key={gen ? gen.id : index}
                         generation={gen}
                         index={index}
                         isCurrent={index === currentIndex}
@@ -99,7 +105,7 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchIn
     useEffect(() => {
         return () => {
             imageGenerationsRef.current.forEach(gen => {
-                if (gen.imageUrl && gen.imageUrl.startsWith('blob:')) {
+                if (gen && gen.imageUrl && gen.imageUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(gen.imageUrl);
                 }
             });
@@ -120,7 +126,7 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchIn
 
     const currentGeneration = imageGenerations[currentIndex];
     const totalCount = imageGenerations.length;
-    const completedCount = imageGenerations.filter(g => g.status === 'completed' || g.status === 'failed').length;
+    const completedCount = imageGenerations.filter(g => g && (g.status === 'completed' || g.status === 'failed')).length;
     const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
     return (
