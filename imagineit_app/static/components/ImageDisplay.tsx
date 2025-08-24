@@ -156,7 +156,8 @@ const ImageDisplay: React.FC<ImageDisplayProps> = ({ imageGenerations, isBatchIn
                                         />
                                     );
                                 }
-                                // Fallthrough to show spinner while fetching the final image
+                                // Explicitly render LoadingSpinner for completed status without URL
+                                return <LoadingSpinner progress={currentGeneration.progressText || 'Fetching image...'} />;
                             case 'generating':
                                 return <LoadingSpinner progress={currentGeneration.progressText} />;
                              case 'failed':
