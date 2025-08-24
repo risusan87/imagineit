@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import { fetchImageHashes, fetchImageById, createZipFile } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
@@ -65,7 +67,7 @@ const ExportView: React.FC = () => {
     useEffect(() => {
         imageHashes.forEach(hash => {
             if (!loadedImages.has(hash)) {
-                fetchImageById(hash, 3) // Use level 3 for smaller thumbnails in the grid
+                fetchImageById(hash, 2)
                     .then(url => setLoadedImages(prev => new Map(prev).set(hash, url)))
                     .catch(err => console.error(`Failed to load image ${hash}`, err));
             }

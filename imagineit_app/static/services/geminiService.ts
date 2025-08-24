@@ -1,3 +1,4 @@
+
 import { getCookie } from '../utils/cookies';
 import { COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN } from '../constants';
 import { LoraModelConfig, ImageGeneration } from '../types';
@@ -194,13 +195,16 @@ export const fetchImageHashes = async (filters: ImageHashFilters): Promise<strin
 /**
  * Fetches a single image by its hash ID.
  * @param id The hash ID of the image.
- * @param level The compression level for the image (0 for full size).
+ * @param level The resolution level (e.g., 0 for full, 2 for thumbnail).
  * @param signal An optional AbortSignal to cancel the request.
  * @returns A promise that resolves to a blob URL of the image.
  */
-export const fetchImageById = async (id: string, level: number = 0, signal?: AbortSignal): Promise<string> => {
+export const fetchImageById = async (id: string, level: number, signal?: AbortSignal): Promise<string> => {
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/v1/images/${id}?compression_level=${level}`;
+    const params = new URLSearchParams({
+        level: String(level)
+    });
+    const url = `${baseUrl}/api/v1/${id}/image?${params.toString()}`;
     try {
         const response = await fetch(url, { signal });
         if (!response.ok) {
