@@ -193,7 +193,7 @@ const App: React.FC = () => {
             fetchesToPerform.forEach(({ index, hash }) => {
                 fetchedHashesRef.current.add(hash);
         
-                fetchImageById(hash)
+                fetchImageById(hash, 0)
                     .then(imageUrl => {
                         handleUpdateGeneration(index, { status: 'completed', imageUrl, progressText: 'Completed' });
                     })

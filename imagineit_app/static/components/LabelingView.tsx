@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchImageHashes, fetchImageById, submitLabel, fetchImageLabel, fetchImagePrompt, deleteImage } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
@@ -153,7 +155,7 @@ const LabelingView: React.FC = () => {
             const hash = imageHashes[i];
             if (hash && !thumbnailCache.has(hash) && !fetchingThumbnails.has(hash)) {
                 setFetchingThumbnails(prev => new Set(prev).add(hash));
-                fetchImageById(hash, 4) // level 4 for small thumbnails
+                fetchImageById(hash, 2)
                     .then(url => {
                         setThumbnailCache(prev => new Map(prev).set(hash, url));
                     })
