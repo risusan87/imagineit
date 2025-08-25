@@ -39,18 +39,19 @@ class SDXLInferenceHelper:
                 pipe = StableDiffusionXLPipeline.from_pretrained( 
                     model_name,
                     torch_dtype=torch.float16,
-                ).to(f"cuda:{dev_name}")
+                )
+                pipe = pipe.to(f"cuda:{dev_name}")
                 self._pipe_free_flag.append(threading.Event())
                 self._pipes.append(pipe)
         else:
             print("NO CUDA GPUs FOUND! The model will be loaded on CPU")
             print("Loading Stable Diffusion on CPU is NOT recommended, but harmless. It will take space in system RAM for a lot less efficient inference compared to GPU")
-            self._pipes.append(StableDiffusionXLPipeline.from_pretrained(
+            pipe = StableDiffusionXLPipeline.from_pretrained(
                 model_name,
                 torch_dtype=torch.float32
-            ))
+            )
+            self._pipes.append(pipe)
             self._pipe_free_flag.append(threading.Event())
-            self._pipes[0] = self._pipes[0].to("cpu")
         if loras:
             for pipe in self._pipes:
                 adapter_names = []
@@ -102,13 +103,13 @@ class SDXLInferenceHelper:
     def img_inference(self, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
         reference = str(uuid4())
         print(f"Starting image inference: {reference}")
-        if self._pipes is None:
+        if len(self._pipes) < 1:
             self._requests[reference] = {
                 "status": "initializing_model", 
                 "result": None, 
                 "error": None
             }
-            self.load_model([])
+        # TODO: fix this
         self._requests[reference] = {
             "status": "in_queue", 
             "result": None, 
