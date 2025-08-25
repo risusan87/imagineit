@@ -31,7 +31,7 @@ Developer is not aware of specific threshold of Python version that works proper
 $python --version
 > Python 3.12.7
 ```
-It is best adviced with the use of virtual environment with venv:
+It is best advised with the use of virtual environment with venv:
 ```
 $python -m venv .venv && source ./venv/bin/activate
 ```
