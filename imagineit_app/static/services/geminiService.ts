@@ -58,7 +58,7 @@ export const generateImagesStream = async (
     const baseUrl = getApiBaseUrl();
 
     // 1. Make the initial POST request to start inference
-    const postUrl = `${baseUrl}/v1/inference`;
+    const postUrl = `${baseUrl}/api/v1/inference`;
     const payload = {
         prompt,
         negative_prompt: negativePrompt,
@@ -106,7 +106,7 @@ export const generateImagesStream = async (
 
     // 2. Open an SSE stream for each reference
     references.forEach((ref, index) => {
-        const sseUrl = `${baseUrl}/v1/inference/${ref}`;
+        const sseUrl = `${baseUrl}/api/v1/inference/${ref}`;
         const eventSource = new EventSource(sseUrl);
 
         eventSource.onmessage = (event) => {
