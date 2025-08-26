@@ -12,6 +12,10 @@ ignore
 *.csv
 run.py
 
+client_secrets.json
+creds.txt
+
+
 # Logs
 logs
 *.log

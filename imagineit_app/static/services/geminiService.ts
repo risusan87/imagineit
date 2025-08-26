@@ -23,7 +23,7 @@ const getApiBaseUrl = (): string => {
 };
 
 /**
- * Initiates an image generation job via Server-Sent Events (SSE) and streams progress.
+ * Initiates an image generation job and opens individual SSE streams for progress.
  * @param prompt The main prompt.
  * @param negativePrompt The negative prompt.
  * @param width The width of the image.
@@ -34,7 +34,7 @@ const getApiBaseUrl = (): string => {
  * @param batchSize The number of images to generate in parallel on the backend.
  * @param inferenceCount The total number of images to generate.
  * @param onUpdate Callback function to receive progress updates for each image.
- * @param onError Callback function to handle any errors during the stream.
+ * @param onError Callback function to handle any errors during the initial request.
  */
 export const generateImagesStream = async (
     prompt: string,
@@ -55,102 +55,101 @@ export const generateImagesStream = async (
     }
 
     const totalImages = batchSize * inferenceCount;
+    const baseUrl = getApiBaseUrl();
 
-    const params = new URLSearchParams({
+    // 1. Make the initial POST request to start inference
+    const postUrl = `${baseUrl}/v1/inference`;
+    const payload = {
         prompt,
         negative_prompt: negativePrompt,
-        width: String(width),
-        height: String(height),
-        num_inference_steps: String(steps),
-        guidance_scale: String(guidanceScale),
-        inference_size: String(totalImages),
-    });
+        width,
+        height,
+        num_inference_steps: steps,
+        guidance_scale: guidanceScale,
+        seed: seed ?? Math.floor(Math.random() * 2**32), // Ensure seed is not null
+        inference_size: totalImages,
+    };
 
-    if (seed !== null && seed >= 0) {
-        params.append('seed', String(seed));
-    }
-    
-    const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/v1/imagine?${params.toString()}`;
-
+    let references: string[];
     try {
-        const response = await fetch(url);
+        const response = await fetch(postUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
 
         if (!response.ok) {
             let errorMessage = `API request failed with status ${response.status}`;
             try {
                 const errorData = await response.json();
                 errorMessage = errorData.detail || errorMessage;
-            } catch (e) {
-                // Ignore if response body is not JSON or empty
-            }
+            } catch (e) { /* ignore if response is not JSON */ }
             throw new Error(errorMessage);
         }
-
-        if (!response.body) {
-            throw new Error('Response body is missing.');
+        
+        references = await response.json();
+        if (!Array.isArray(references) || references.length !== totalImages) {
+            throw new Error('Received an invalid list of inference references from the server.');
         }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        const completedIndices = new Set<number>();
-
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) {
-                break;
-            }
-
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split('\n\n');
-            buffer = parts.pop() || ''; // Keep the last partial message in buffer
-
-            for (const part of parts) {
-                if (part.startsWith('data: ')) {
-                    const jsonData = part.substring(6);
-                    if (jsonData.trim()) {
-                        try {
-                            const statusList = JSON.parse(jsonData);
-                            if (Array.isArray(statusList)) {
-                                const updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[] = [];
-
-                                statusList.forEach((status: any, index: number) => {
-                                    if (completedIndices.has(index)) return;
-
-                                    if (status.status === 'completed') {
-                                        completedIndices.add(index);
-                                        // Per user instruction, the image hash is retrieved directly from status.result.
-                                        const hash = status.result;
-                                        updates.push({ index, data: { status: 'completed', hash, progressText: 'Completed' } });
-                                    } else if (status.status && status.status.startsWith('in_progress')) {
-                                        updates.push({ index, data: { status: 'generating', progressText: status.status.replace('in_progress: ', '') } });
-                                    } else if (status.status === 'failed') {
-                                        completedIndices.add(index);
-                                        updates.push({ index, data: { status: 'failed', progressText: status.result || 'Generation failed' } });
-                                    }
-                                });
-
-                                if (updates.length > 0) {
-                                    onUpdate(updates);
-                                }
-                            }
-                        } catch (e) {
-                            console.error('Failed to parse SSE data chunk:', jsonData, e);
-                        }
-                    }
-                }
-            }
-        }
     } catch (error) {
-        console.error("Image generation stream failed:", error);
+        console.error("Failed to initiate inference:", error);
         if (error instanceof Error) {
-            if (error.name === 'AbortError') return; // Ignore abort errors
             onError(error);
         } else {
-            onError(new Error('An unknown error occurred during image generation stream.'));
+            onError(new Error('An unknown error occurred while initiating inference.'));
         }
+        return;
     }
+
+    // 2. Open an SSE stream for each reference
+    references.forEach((ref, index) => {
+        const sseUrl = `${baseUrl}/v1/inference/${ref}`;
+        const eventSource = new EventSource(sseUrl);
+
+        eventSource.onmessage = (event) => {
+            try {
+                const status = JSON.parse(event.data);
+                
+                let updateData: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> = {};
+                let isDone = false;
+                
+                if (status.status === 'completed') {
+                    isDone = true;
+                    const hash = status.result;
+                    updateData = { status: 'completed', hash, progressText: 'Completed' };
+                } else if (status.status && status.status.startsWith('in_progress')) {
+                    updateData = { status: 'generating', progressText: status.status.replace('in_progress: ', '') };
+                } else if (status.status === 'failed') {
+                    isDone = true;
+                    updateData = { status: 'failed', progressText: status.result || 'Generation failed' };
+                }
+                
+                if (Object.keys(updateData).length > 0) {
+                    onUpdate([{ index, data: updateData }]);
+                }
+                
+                if (isDone) {
+                    eventSource.close();
+                }
+
+            } catch (e) {
+                console.error('Failed to parse SSE data chunk:', event.data, e);
+                eventSource.close();
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error(`EventSource for reference ${ref} failed:`, err);
+            onUpdate([{ 
+                index, 
+                data: { status: 'failed', progressText: 'Stream connection error.' } 
+            }]);
+            eventSource.close();
+        };
+    });
 };
 
 interface ImageHashFilters {

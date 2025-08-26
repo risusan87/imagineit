@@ -203,7 +203,6 @@ def imagine(prompt: str, negative_prompt: str, width: int, height: int, num_infe
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
-        "X-Accel-Buffering": "no", # For Nginx
     }
     return StreamingResponse(retrieves(references), headers=headers)
 

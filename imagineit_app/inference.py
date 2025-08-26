@@ -19,17 +19,35 @@ class SDXLInferenceHelper:
         self._pipes: list[StableDiffusionXLPipeline] = None
         self._pipe_free_flag: list[threading.Event] = []
         self._requests = {}
+        self._model_loaded_event = threading.Event()
 
-    def load_model(self, loras: list[str], adapter_weights: list[int]=None):
+    def model_loaded(self):
+        return self._model_loaded_event.is_set()
+    
+    def construct_status(self, status: str, result: str=None, priority: str=None) -> dict:
+        return {
+            "status": status,
+            "result": result,
+            "priority": priority
+        }
+
+    def load_model(self, loras: list[str]=[], adapter_weights: list[int]=None, cpu_inference_awareness: bool=False):
         model_name = "cagliostrolab/animagine-xl-4.0"
+        if adapter_weights is not None and len(adapter_weights) != len(loras):
+            print("Error with adapter_weights length.")
+            print("adapter_weights is provided but mapping doesn't make sense because length between loras and adapter_weights mismatch.")
+            return
+        self._model_loaded_event.clear()
         print(f"Loading model {model_name}...")
-        if self._pipes is not None:
+        if self.model_loaded():
             print("Disposing old model...")
             self._pipes = None
+            self._pipe_free_flag = None
             gc.collect()    
             with torch.no_grad():
                 torch.cuda.empty_cache()
         self._pipes = []
+        self._pipe_free_flag = []
         # TODO: Support other than cuda
         if torch.cuda.is_available():
             gpu_count = torch.cuda.device_count()
@@ -41,32 +59,43 @@ class SDXLInferenceHelper:
                     torch_dtype=torch.float16,
                 )
                 pipe = pipe.to(f"cuda:{dev_name}")
-                self._pipe_free_flag.append(threading.Event())
                 self._pipes.append(pipe)
         else:
-            print("NO CUDA GPUs FOUND! The model will be loaded on CPU")
-            print("Loading Stable Diffusion on CPU is NOT recommended, but harmless. It will take space in system RAM for a lot less efficient inference compared to GPU")
+            print("NO CUDA GPUs FOUND!")
+            print("Loading Stable Diffusion on CPU is NOT recommended.")
+            if not cpu_inference_awareness:
+                print("If you are absolutely sure you want to proceed, set cpu_inference_awareness=True.")
+                self._model_loaded_event.set()
+                return
             pipe = StableDiffusionXLPipeline.from_pretrained(
                 model_name,
                 torch_dtype=torch.float32
             )
+            pipe = pipe.to("cpu")
             self._pipes.append(pipe)
+        for _ in range(len(self._pipes)):
             self._pipe_free_flag.append(threading.Event())
-        if loras:
+        for i, lora in enumerate(loras):
+            if not os.path.exists(lora):
+                print(f"Warning: LORA file {lora} does not exist. Ignoring.")
+                continue
+            effective_adapters = []
+            effective_weights = []
             for pipe in self._pipes:
-                adapter_names = []
-                for lora in loras:
-                    lora_name = lora.split("/")[-1].split(".")[0]
-                    pipe.load_lora_weights(lora, adapter_name=lora_name)
-                    adapter_names.append(lora_name)
-                pipe.set_adapters(adapter_names, adapter_weights=adapter_weights if adapter_weights else None)
+                lora_name = lora.split("/")[-1].split(".")[0]
+                pipe.load_lora_weights(lora, adapter_name=lora_name)
+                effective_adapters.append(lora_name)
+                effective_weights.append(adapter_weights[i] if adapter_weights is not None else 1.0)
+            pipe.set_adapters(effective_adapters, adapter_weights=effective_weights if len(effective_weights) > 0 else None)
+        self._model_loaded_event.set()
+        print("Model loaded.")
 
     def progress(self, reference: str):
-        return self._requests.get(reference, {"status": "not_found", "result": None, "error": "Reference not found"})
+        return self._requests.get(reference, self.construct_status(status="not_found", result=None, priority=None))
     
     def _generate(self, reference: str, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
         available_pipe = -1
-        print(f"number of pipe is {self._pipe_free_flag}")
+        print(f"number of pipe is {len(self._pipe_free_flag)}")
         while available_pipe == -1:
             time.sleep(0.1)
             for i, pipe_flag in enumerate(self._pipe_free_flag):
@@ -74,7 +103,6 @@ class SDXLInferenceHelper:
                     pipe_flag.set()
                     available_pipe = i
                     break
-        self._requests[reference]["status"] = "started"
         pipe = self._pipes[available_pipe]
         def timestep_callback(step, timestep, latents):
             self._requests[reference]["status"] = f"in_progress: ({step}/{steps})"
@@ -94,27 +122,16 @@ class SDXLInferenceHelper:
         with GLOBAL_DATABASE_THREAD_LOCK:
             img_hash = write_v2(None, image_bytes.getvalue(), seed, prompt, negative_prompt, width, height, steps, guidance_scale)
         self._pipe_free_flag[available_pipe].clear()
-        self._requests[reference] = {
-            "status": "completed",
-            "result": img_hash,
-            "error": None
-        }
+        self._requests[reference] = self.construct_status(status="completed", result=img_hash, priority="low")
 
     def img_inference(self, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
         reference = str(uuid4())
         print(f"Starting image inference: {reference}")
-        if len(self._pipes) < 1:
-            self._requests[reference] = {
-                "status": "initializing_model", 
-                "result": None, 
-                "error": None
-            }
+        if not self.model_loaded():
+            self._requests[reference] = self.construct_status(status="model_not_loaded", result=None, priority="low")
+            return reference
         # TODO: fix this
-        self._requests[reference] = {
-            "status": "in_queue", 
-            "result": None, 
-            "error": None
-        }
+        self._requests[reference] = self.construct_status(status="queued", result=None, priority="low")
         worker = threading.Thread(target=self._generate, args=(reference, prompt, steps, guidance_scale, negative_prompt, width, height, seed))
         worker.start()
         return reference
