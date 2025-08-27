@@ -37,9 +37,9 @@ class SDXLInferenceHelper:
             print("Error with adapter_weights length.")
             print("adapter_weights is provided but mapping doesn't make sense because length between loras and adapter_weights mismatch.")
             return
-        self._model_loaded_event.clear()
         print(f"Loading model {model_name}...")
         if self.model_loaded():
+            self._model_loaded_event.clear()
             print("Disposing old model...")
             self._pipes = None
             self._pipe_free_flag = None
