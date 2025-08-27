@@ -51,7 +51,7 @@ class SDXLInferenceHelper:
         self._pipe_free_flag = []
         # TODO: Support other than cuda
         if torch.cuda.is_available():
-            gpu_count = torch.cuda.device_count()
+            gpu_count = 1#torch.cuda.device_count()
             print(f"Found {gpu_count} cuda GPU(s)")
             pipeline_template = StableDiffusionXLPipeline.from_pretrained(
                 model_name,
