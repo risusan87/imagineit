@@ -1,4 +1,5 @@
 import os
+import copy
 
 import torch
 from diffusers import StableDiffusionXLPipeline # Use the correct XL pipeline
@@ -52,15 +53,17 @@ class SDXLInferenceHelper:
         if torch.cuda.is_available():
             gpu_count = torch.cuda.device_count()
             print(f"Found {gpu_count} cuda GPU(s)")
+            pipeline_template = StableDiffusionXLPipeline.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16,
+            )
             for dev_name in range(gpu_count):
                 print(f"Loading model on GPU {dev_name}...")
-                pipe = StableDiffusionXLPipeline.from_pretrained( 
-                    model_name,
-                    torch_dtype=torch.float16,
-                )
-                pipe = pipe.to(f"cuda:{dev_name}")
+                pipe = copy.deepcopy(pipeline_template)
+                pipe.to(f"cuda:{dev_name}")
                 self._pipes.append(pipe)
                 print(f"Loaded to cuda:{dev_name}")
+            del pipeline_template
         else:
             print("NO CUDA GPUs FOUND!")
             print("Loading Stable Diffusion on CPU is NOT recommended.")
@@ -76,18 +79,24 @@ class SDXLInferenceHelper:
             self._pipes.append(pipe)
         for _ in range(len(self._pipes)):
             self._pipe_free_flag.append(threading.Event())
+        effective_adapters = []
+        effective_weights = []
         for i, lora in enumerate(loras):
             if not os.path.exists(lora):
                 print(f"Warning: LORA file {lora} does not exist. Ignoring.")
                 continue
-            effective_adapters = []
-            effective_weights = []
+            effective_adapters.append(lora_name)
+            effective_weights.append(adapter_weights[i] if adapter_weights is not None else 1.0)
+            template_pipe = self._pipes[0]
+            lora_name = lora.split("/")[-1].split(".")[0]
+            template_pipe.load_lora_weights(lora, adapter_name=lora_name)
+            lora_state_dict = template_pipe.lora_state_dict(adapter_name=lora_name)
+            if len(self._pipes) > 1:
+                for pipe in self._pipes[1:]:
+                    pipe.load_lora_weights(lora_state_dict, adapter_name=lora_name)
+        if len(effective_adapters) > 0:
             for pipe in self._pipes:
-                lora_name = lora.split("/")[-1].split(".")[0]
-                pipe.load_lora_weights(lora, adapter_name=lora_name)
-                effective_adapters.append(lora_name)
-                effective_weights.append(adapter_weights[i] if adapter_weights is not None else 1.0)
-                pipe.set_adapters(effective_adapters, adapter_weights=effective_weights if len(effective_weights) > 0 else None)
+                pipe.set_adapters(effective_adapters, adapter_weights=effective_weights)
         self._model_loaded_event.set()
         print("Model loaded.")
 
