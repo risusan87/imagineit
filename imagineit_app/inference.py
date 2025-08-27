@@ -34,7 +34,11 @@ class SDXLInferenceHelper:
 
     def load_model(self, loras: list[str]=[], adapter_weights: list[int]=[], cpu_inference_awareness: bool=False):
         model_name = "cagliostrolab/animagine-xl-4.0"
-        if adapter_weights is not None and len(adapter_weights) != len(loras):
+        if loras is None:
+            loras = []
+        if adapter_weights is None:
+            adapter_weights = []
+        if len(adapter_weights) != len(loras):
             print("Error with adapter_weights length.")
             print("adapter_weights is provided but mapping doesn't make sense because length between loras and adapter_weights mismatch.")
             return
