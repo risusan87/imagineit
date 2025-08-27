@@ -38,25 +38,32 @@ class SDXLInferenceHelper:
             print("Error with adapter_weights length.")
             print("adapter_weights is provided but mapping doesn't make sense because length between loras and adapter_weights mismatch.")
             return
-        print(f"Loading model {model_name}...")
-        if self.model_loaded():
-            self._model_loaded_event.clear()
-            print("Disposing old model...")
-            self._pipes = None
-            self._pipe_free_flag = None
-            gc.collect()    
-            with torch.no_grad():
-                torch.cuda.empty_cache()
         self._pipes = []
         self._pipe_free_flag = []
+        pipeline_template = StableDiffusionXLPipeline.from_pretrained(
+            model_name,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        )
+        effective_adapters = None
+        effective_weights = None
+        if len(loras) > 0:
+            effective_adapters = []
+            effective_weights = []
+            for lora, weight in zip(loras, adapter_weights):
+                if not os.path.exists(lora):
+                    print(f"Warning: LORA file {lora} does not exist. Ignoring.")
+                    continue
+                adapter_name = lora.split("/")[-1].split(".")[0]
+                effective_adapters.append((lora, adapter_name))
+                effective_weights.append(weight)
+        if effective_adapters is not None:
+            for lora_path, adapter_name in effective_adapters:
+                pipeline_template.load_lora_weights(lora_path, adapter_name=adapter_name)
+            pipeline_template.set_adapters([adapter_name for _, adapter_name in effective_adapters], adapter_weights=effective_weights)
         # TODO: Support other than cuda
         if torch.cuda.is_available():
             gpu_count = torch.cuda.device_count()
             print(f"Found {gpu_count} cuda GPU(s)")
-            pipeline_template = StableDiffusionXLPipeline.from_pretrained(
-                model_name,
-                torch_dtype=torch.float16,
-            )
             for dev_name in range(gpu_count):
                 print(f"Loading model on GPU {dev_name}...")
                 pipe = copy.deepcopy(pipeline_template)
@@ -71,28 +78,10 @@ class SDXLInferenceHelper:
                 print("If you are absolutely sure you want to proceed, set cpu_inference_awareness=True.")
                 self._model_loaded_event.set()
                 return
-            pipe = StableDiffusionXLPipeline.from_pretrained(
-                model_name,
-                torch_dtype=torch.float32
-            )
-            pipe = pipe.to("cpu")
+            pipe = pipeline_template.to("cpu")
             self._pipes.append(pipe)
         for _ in range(len(self._pipes)):
             self._pipe_free_flag.append(threading.Event())
-        effective_adapters = []
-        effective_weights = []
-        for i, lora in enumerate(loras):
-            if not os.path.exists(lora):
-                print(f"Warning: LORA file {lora} does not exist. Ignoring.")
-                continue
-            lora_name = lora.split("/")[-1].split(".")[0]
-            effective_adapters.append(lora_name)
-            effective_weights.append(adapter_weights[i] if adapter_weights is not None else 1.0)
-            for pipe in self._pipes:
-                pipe.load_lora_weights(lora, adapter_name=lora_name)
-        if len(effective_adapters) > 0:
-            for pipe in self._pipes:
-                pipe.set_adapters(effective_adapters, adapter_weights=effective_weights)
         self._model_loaded_event.set()
         print("Model loaded.")
 
