@@ -32,7 +32,7 @@ class SDXLInferenceHelper:
             "priority": priority
         }
 
-    def load_model(self, loras: list[str]=[], adapter_weights: list[int]=None, cpu_inference_awareness: bool=False):
+    def load_model(self, loras: list[str]=[], adapter_weights: list[int]=[], cpu_inference_awareness: bool=False):
         model_name = "cagliostrolab/animagine-xl-4.0"
         if adapter_weights is not None and len(adapter_weights) != len(loras):
             print("Error with adapter_weights length.")
