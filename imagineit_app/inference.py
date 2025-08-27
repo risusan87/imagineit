@@ -60,6 +60,7 @@ class SDXLInferenceHelper:
                 )
                 pipe = pipe.to(f"cuda:{dev_name}")
                 self._pipes.append(pipe)
+                print(f"Loaded to cuda:{dev_name}")
         else:
             print("NO CUDA GPUs FOUND!")
             print("Loading Stable Diffusion on CPU is NOT recommended.")
