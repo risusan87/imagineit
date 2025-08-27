@@ -87,7 +87,7 @@ class SDXLInferenceHelper:
                 pipe.load_lora_weights(lora, adapter_name=lora_name)
                 effective_adapters.append(lora_name)
                 effective_weights.append(adapter_weights[i] if adapter_weights is not None else 1.0)
-            pipe.set_adapters(effective_adapters, adapter_weights=effective_weights if len(effective_weights) > 0 else None)
+                pipe.set_adapters(effective_adapters, adapter_weights=effective_weights if len(effective_weights) > 0 else None)
         self._model_loaded_event.set()
         print("Model loaded.")
 
