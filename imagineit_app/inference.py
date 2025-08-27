@@ -85,10 +85,10 @@ class SDXLInferenceHelper:
             if not os.path.exists(lora):
                 print(f"Warning: LORA file {lora} does not exist. Ignoring.")
                 continue
+            lora_name = lora.split("/")[-1].split(".")[0]
             effective_adapters.append(lora_name)
             effective_weights.append(adapter_weights[i] if adapter_weights is not None else 1.0)
             template_pipe = self._pipes[0]
-            lora_name = lora.split("/")[-1].split(".")[0]
             template_pipe.load_lora_weights(lora, adapter_name=lora_name)
             lora_state_dict = template_pipe.lora_state_dict(adapter_name=lora_name)
             if len(self._pipes) > 1:
