@@ -88,12 +88,8 @@ class SDXLInferenceHelper:
             lora_name = lora.split("/")[-1].split(".")[0]
             effective_adapters.append(lora_name)
             effective_weights.append(adapter_weights[i] if adapter_weights is not None else 1.0)
-            template_pipe = self._pipes[0]
-            template_pipe.load_lora_weights(lora, adapter_name=lora_name)
-            lora_state_dict = template_pipe.lora_state_dict(adapter_name=lora_name)
-            if len(self._pipes) > 1:
-                for pipe in self._pipes[1:]:
-                    pipe.load_lora_weights(lora_state_dict, adapter_name=lora_name)
+            for pipe in self._pipes:
+                pipe.load_lora_weights(lora, adapter_name=lora_name)
         if len(effective_adapters) > 0:
             for pipe in self._pipes:
                 pipe.set_adapters(effective_adapters, adapter_weights=effective_weights)
