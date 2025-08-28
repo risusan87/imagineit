@@ -179,7 +179,7 @@ class SDXLInferenceHelper:
                     break
         pipe = self._pipes[available_pipe]
         def timestep_callback(step, timestep, latents):
-            self._requests[reference]["status"] = f"in_progress: ({step}/{steps})"
+            self._requests_queue[reference]["status"] = f"in_progress: ({step}/{steps})"
         image = pipe(
             prompt=prompt,
             num_inference_steps=steps,
@@ -196,16 +196,16 @@ class SDXLInferenceHelper:
         with GLOBAL_DATABASE_THREAD_LOCK:
             img_hash = write_v2(None, image_bytes.getvalue(), seed, prompt, negative_prompt, width, height, steps, guidance_scale)
         self._pipe_free_flag[available_pipe].clear()
-        self._requests[reference] = self.construct_status(status="completed", result=img_hash, priority="low")
+        self._requests_queue[reference] = self.construct_status(status="completed", result=img_hash, priority="low")
 
     def img_inference(self, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
         reference = str(uuid4())
         print(f"Starting image inference: {reference}")
         if not self.model_loaded():
-            self._requests[reference] = self.construct_status(status="model_not_loaded", result=None, priority="low")
+            self._requests_queue[reference] = self.construct_status(status="model_not_loaded", result=None, priority="low")
             return reference
         # TODO: fix this
-        self._requests[reference] = self.construct_status(status="queued", result=None, priority="low")
+        self._requests_queue[reference] = self.construct_status(status="queued", result=None, priority="low")
         worker = threading.Thread(target=self._generate, args=(reference, prompt, steps, guidance_scale, negative_prompt, width, height, seed))
         worker.start()
         return reference
