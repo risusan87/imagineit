@@ -1,5 +1,6 @@
 import os
 import copy
+import asyncio
 
 import torch
 from diffusers import StableDiffusionXLPipeline # Use the correct XL pipeline
@@ -18,9 +19,75 @@ class SDXLInferenceHelper:
     
     def __init__(self):
         self._pipes: list[StableDiffusionXLPipeline] = None
-        self._pipe_free_flag: list[threading.Event] = []
-        self._requests = {}
+        self._pipe_free_flag: list[asyncio.Event] = []
+        self._requests_queue = asyncio.Queue()
         self._model_loaded_event = threading.Event()
+        self._worker_loop_event = asyncio.Event()
+        self._worker = threading.Thread(target=lambda:asyncio.run(self.worker_thread()))
+        self._inference_refs = {}
+        self._inference_refs_lock = asyncio.Lock()
+
+    async def _generate_async(self, new_ref: str, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
+        available_pipe = -1
+        while available_pipe == -1:
+            await asyncio.sleep(0.1)
+            for i, pipe_flag in enumerate(self._pipe_free_flag):
+                if not pipe_flag.is_set():
+                    pipe_flag.set()
+                    available_pipe = i
+                    break
+        async def timestep_callback(step, timestep, latents):
+            async with self._inference_refs_lock:
+                self._inference_refs[new_ref]["status"] = f"in_progress: ({step}/{steps})"
+        pipe = self._pipes[available_pipe]
+        image = pipe(
+            prompt=prompt,
+            num_inference_steps=steps,
+            guidance_scale=guidance_scale,
+            negative_prompt=negative_prompt,
+            width=width,
+            height=height,
+            seed=seed,
+            callback_steps=1,
+            callback=timestep_callback,
+        ).images[0]
+        self._pipe_free_flag[available_pipe].clear()
+        image_bytes = BytesIO()
+        image.save(image_bytes, format="PNG")
+        def synchronous_db_write():
+            with GLOBAL_DATABASE_THREAD_LOCK:
+                img_hash = write_v2(None, image_bytes.getvalue(), seed, prompt, negative_prompt, width, height, steps, guidance_scale)
+            return img_hash
+        img_hash = await asyncio.get_event_loop().run_in_executor(None, synchronous_db_write)
+        async with self._inference_refs_lock:
+            self._inference_refs[new_ref] = self.construct_status(status="completed", result=img_hash, priority="low")
+
+    async def worker_thread(self):
+        print("Worker thread is started.")
+        while not self._worker_loop_event.is_set():
+            req = await self._requests_queue.get()
+            new_ref = req["new_ref"]
+            async with self._inference_refs_lock:
+                self._inference_refs[new_ref] = self.construct_status(status="queued", result=None, priority="low")
+            asyncio.create_task(self._generate_async(**req))
+    
+    def img_inference_async(self, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
+        if not self.model_loaded():
+            print("Model not loaded yet.")
+            return
+        ref = str(uuid4())
+        req = {
+            "new_ref": ref,
+            "prompt": prompt,
+            "steps": steps,
+            "guidance_scale": guidance_scale,
+            "negative_prompt": negative_prompt,
+            "width": width,
+            "height": height,
+            "seed": seed
+        }
+        self._requests_queue.put_nowait(req)
+        return ref
 
     def model_loaded(self):
         return self._model_loaded_event.is_set()
