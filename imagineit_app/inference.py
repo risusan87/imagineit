@@ -67,6 +67,7 @@ class SDXLInferenceHelper:
         print("Worker thread is started.")
         while not self._worker_loop_event.is_set():
             req = await self._requests_queue.get()
+            print("Received request")
             new_ref = req["new_ref"]
             async with self._inference_refs_lock:
                 self._inference_refs[new_ref] = self.construct_status(status="queued", result=None, priority="low")
@@ -88,6 +89,8 @@ class SDXLInferenceHelper:
             "seed": seed
         }
         self._requests_queue.put_nowait(req)
+        while ref not in self._inference_refs:
+            time.sleep(0.1)
         return ref
 
     def model_loaded(self):
