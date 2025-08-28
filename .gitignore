@@ -10,6 +10,8 @@ ignore
 *.imdb
 *.ipynb
 *.csv
+client_secrets.json
+creds.txt
 
 # Logs
 logs
