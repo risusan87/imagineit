@@ -27,6 +27,7 @@ class SDXLInferenceHelper:
         self._worker.start()
         self._inference_refs = {}
         self._inference_refs_lock = asyncio.Lock()
+        self._worker_event_loop = None
 
     async def _generate_async(self, new_ref: str, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
         available_pipe = -1
@@ -59,11 +60,12 @@ class SDXLInferenceHelper:
             with GLOBAL_DATABASE_THREAD_LOCK:
                 img_hash = write_v2(None, image_bytes.getvalue(), seed, prompt, negative_prompt, width, height, steps, guidance_scale)
             return img_hash
-        img_hash = await asyncio.get_event_loop().run_in_executor(None, synchronous_db_write)
+        img_hash = await self._worker_event_loop.run_in_executor(None, synchronous_db_write)
         async with self._inference_refs_lock:
             self._inference_refs[new_ref] = self.construct_status(status="completed", result=img_hash, priority="low")
 
     async def worker_thread(self):
+        self._worker_event_loop = asyncio.get_event_loop()
         print("Worker thread is started.")
         while not self._worker_loop_event.is_set():
             req = await self._requests_queue.get()
@@ -88,7 +90,9 @@ class SDXLInferenceHelper:
             "height": height,
             "seed": seed
         }
-        self._requests_queue.put_nowait(req)
+        async def put_request():
+            await self._requests_queue.put(req)
+        asyncio.run_coroutine_threadsafe(put_request, self._worker_event_loop)
         while ref not in self._inference_refs:
             time.sleep(0.1)
         return ref
