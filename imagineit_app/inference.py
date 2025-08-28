@@ -90,9 +90,8 @@ class SDXLInferenceHelper:
             "height": height,
             "seed": seed
         }
-        async def put_request():
-            await self._requests_queue.put(req)
-        asyncio.run_coroutine_threadsafe(put_request, self._worker_event_loop)
+        future = asyncio.run_coroutine_threadsafe(self._requests_queue.put(req), self._worker_event_loop)
+        future.result()
         while ref not in self._inference_refs:
             time.sleep(0.1)
         return ref
