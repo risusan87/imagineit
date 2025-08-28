@@ -24,6 +24,7 @@ class SDXLInferenceHelper:
         self._model_loaded_event = threading.Event()
         self._worker_loop_event = asyncio.Event()
         self._worker = threading.Thread(target=lambda:asyncio.run(self.worker_thread()))
+        self._worker.start()
         self._inference_refs = {}
         self._inference_refs_lock = asyncio.Lock()
 
