@@ -23,7 +23,7 @@ class InferencePayload(BaseModel):
 def imagine(payload: InferencePayload):
     image_hashes = []
     for _ in range(payload.inference_size):
-        reference = MODEL.img_inference_async(
+        reference = MODEL.img_inference(
             prompt=payload.prompt,
             steps=payload.num_inference_steps,
             guidance_scale=payload.guidance_scale,
