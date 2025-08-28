@@ -157,7 +157,7 @@ class SDXLInferenceHelper:
         print("Model loaded.")
 
     def progress(self, reference: str):
-        return self._requests.get(reference, self.construct_status(status="not_found", result=None, priority=None))
+        return self._inference_refs.get(reference, self.construct_status(status="not_found", result=None, priority=None))
     
     def _generate(self, reference: str, prompt: str, steps: int, guidance_scale: float, negative_prompt: str, width: int, height: int, seed: int):
         available_pipe = -1
