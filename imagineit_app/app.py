@@ -18,6 +18,7 @@ from imagineit_app.resources import register_resources
 try:
     from imagineit_app.inference import MODEL
 except Exception as e:
+    print(f"Warning: Model loading failed: {e}")
     MODEL = None
 
 

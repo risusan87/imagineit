@@ -64,6 +64,7 @@ export const COOKIE_INFERENCE_COUNT = 'ai_studio_inference_count';
 export const COOKIE_ACTIVE_TAB = 'ai_studio_active_tab';
 export const COOKIE_ALWAYS_RANDOM_SEED = 'ai_studio_always_random_seed';
 export const COOKIE_LORA_MODEL = 'ai_studio_lora_model';
+export const COOKIE_MODEL_NAME = 'ai_studio_model_name';
 
 // Cookie Keys for Backend Settings
 export const COOKIE_BACKEND_MODE = 'ai_studio_backend_mode';

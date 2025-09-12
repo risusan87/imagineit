@@ -1,7 +1,10 @@
-import os
 
-import torch
-from diffusers import StableDiffusionXLPipeline # Use the correct XL pipeline
+try:
+    import torch
+    from diffusers import StableDiffusionXLPipeline
+    LOCAL = True
+except Exception:
+    LOCAL = False
 from io import BytesIO
 import gc
 import threading
@@ -12,17 +15,21 @@ from imagineit_app.imdb import write_v2, GLOBAL_DATABASE_THREAD_LOCK
 
 class SDXLInferenceHelper:
     """
-    "EZ" inference
+    "EZ" inference with pipeline from diffusers.
     """
     
     def __init__(self):
         self._pipes: list[StableDiffusionXLPipeline] = None
         self._pipe_free_flag: list[threading.Event] = []
         self._requests = {}
+        self.status = {
+            "loaded_model": "None",
+            "loaded_loras": [],
+        }
 
-    def load_model(self, loras: list[str], adapter_weights: list[int]=None):
-        model_name = "cagliostrolab/animagine-xl-4.0"
+    def load_model(self, loras: list[str]=[], adapter_weights: list[int]=None, model_name: str="cagliostrolab/animagine-xl-4.0"):
         print(f"Loading model {model_name}...")
+        yield {"status": "loading_model"}
         if self._pipes is not None:
             print("Disposing old model...")
             self._pipes = None
@@ -59,6 +66,10 @@ class SDXLInferenceHelper:
                     pipe.load_lora_weights(lora, adapter_name=lora_name)
                     adapter_names.append(lora_name)
                 pipe.set_adapters(adapter_names, adapter_weights=adapter_weights if adapter_weights else None)
+                self.status["loaded_loras"] = adapter_names
+        print("Model loaded")
+        self.status["loaded_model"] = model_name
+        yield {"status": "model_loaded"}
 
     def progress(self, reference: str):
         return self._requests.get(reference, {"status": "not_found", "result": None, "error": "Reference not found"})
@@ -116,5 +127,5 @@ class SDXLInferenceHelper:
         worker = threading.Thread(target=self._generate, args=(reference, prompt, steps, guidance_scale, negative_prompt, width, height, seed))
         worker.start()
         return reference
-    
+
 MODEL = SDXLInferenceHelper()

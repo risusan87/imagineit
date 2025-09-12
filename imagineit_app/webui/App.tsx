@@ -6,9 +6,9 @@ import {
     COOKIE_SEED, COOKIE_STEPS, COOKIE_GUIDANCE_SCALE, COOKIE_BATCH_SIZE,
     COOKIE_INFERENCE_COUNT, COOKIE_ACTIVE_TAB, COOKIE_EXPIRATION_DAYS,
     COOKIE_ALWAYS_RANDOM_SEED, COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN,
-    COOKIE_LORA_MODEL
+    COOKIE_LORA_MODEL, COOKIE_MODEL_NAME
 } from './constants';
-import { generateImagesStream, fetchImageById } from './services/geminiService';
+import { generateImagesStream, fetchImageById, getModelStatus, getAvailableLoras } from './services/geminiService';
 import Header from './components/Header';
 import ImageControls from './components/ImageControls';
 import ImageDisplay from './components/ImageDisplay';
@@ -48,25 +48,28 @@ const App: React.FC = () => {
     // State for Inference Tab, initialized from cookies with fallbacks.
     const [prompt, setPrompt] = useState<string>(() => getCookie(COOKIE_PROMPT) || '');
     const [negativePrompt, setNegativePrompt] = useState<string>(() => getCookie(COOKIE_NEGATIVE_PROMPT) || '');
+    const [modelName, setModelName] = useState<string>(() => getCookie(COOKIE_MODEL_NAME) || 'sd_xl_base_1.0.safetensors');
     const [loraModels, setLoraModels] = useState<LoraModelConfig[]>(() => {
         const cookieValue = getCookie(COOKIE_LORA_MODEL);
         if (cookieValue) {
             try {
                 const parsed = JSON.parse(cookieValue);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    // Basic validation to ensure it's in the expected format
-                    if (typeof parsed[0].model === 'string' && typeof parsed[0].weight === 'string') {
-                        return parsed;
+                if (Array.isArray(parsed)) {
+                    // Basic validation if not empty
+                    if (parsed.length > 0 && (typeof parsed[0].model !== 'string' || typeof parsed[0].weight !== 'string')) {
+                        // Invalid format, migrate if possible or default to empty
+                        return [{ model: cookieValue, weight: '1.0' }];
                     }
+                    return parsed; // This will return [] if the cookie stores an empty array
                 }
             } catch (e) {
                 // If parsing fails, it's likely the old string format.
                 // Migrate it to the new structure.
-                return [{ model: cookieValue, weight: '' }];
+                return [{ model: cookieValue, weight: '1.0' }];
             }
         }
-        // Default to one empty LoRA entry
-        return [{ model: '', weight: '' }];
+        // Default to an empty array
+        return [];
     });
     const [width, setWidth] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_WIDTH, DEFAULT_WIDTH));
     const [height, setHeight] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_HEIGHT, DEFAULT_HEIGHT));
@@ -99,9 +102,14 @@ const App: React.FC = () => {
     // State for active tab, also persisted.
     const [activeTab, setActiveTab] = useState<Tab>(() => (getCookie(COOKIE_ACTIVE_TAB) as Tab) || 'inference');
 
+    // New state for model status and available LoRAs
+    const [modelStatus, setModelStatus] = useState<{ loaded_model: string; loaded_loras: [string, number][]; } | null>(null);
+    const [availableLoras, setAvailableLoras] = useState<string[]>([]);
+
     // Effects to save state to cookies on change.
     useEffect(() => { setCookie(COOKIE_PROMPT, prompt, COOKIE_EXPIRATION_DAYS); }, [prompt]);
     useEffect(() => { setCookie(COOKIE_NEGATIVE_PROMPT, negativePrompt, COOKIE_EXPIRATION_DAYS); }, [negativePrompt]);
+    useEffect(() => { setCookie(COOKIE_MODEL_NAME, modelName, COOKIE_EXPIRATION_DAYS); }, [modelName]);
     useEffect(() => { setCookie(COOKIE_LORA_MODEL, JSON.stringify(loraModels), COOKIE_EXPIRATION_DAYS); }, [loraModels]);
     useEffect(() => { setCookie(COOKIE_WIDTH, String(width), COOKIE_EXPIRATION_DAYS); }, [width]);
     useEffect(() => { setCookie(COOKIE_HEIGHT, String(height), COOKIE_EXPIRATION_DAYS); }, [height]);
@@ -115,6 +123,49 @@ const App: React.FC = () => {
     useEffect(() => { setCookie(COOKIE_BACKEND_MODE, backendMode, COOKIE_EXPIRATION_DAYS); }, [backendMode]);
     useEffect(() => { setCookie(COOKIE_DEDICATED_DOMAIN, dedicatedDomain, COOKIE_EXPIRATION_DAYS); }, [dedicatedDomain]);
 
+
+    // Fetch model status and available LoRAs on mount
+    const refreshModelStatus = useCallback(async () => {
+        try {
+            const status = await getModelStatus();
+            setModelStatus(status);
+            // FIX: also sync LoRA models to UI state
+            if (status && status.loaded_loras) {
+                if (status.loaded_loras.length > 0) {
+                    const loadedLoras = status.loaded_loras.map(([name, weight]) => ({
+                        model: name,
+                        weight: String(weight),
+                    }));
+                    setLoraModels(loadedLoras);
+                } else {
+                    setLoraModels([]);
+                }
+            }
+            return status;
+        } catch (error) {
+            console.error("Failed to refresh model status:", error);
+            setError(error instanceof Error ? error.message : "Failed to refresh model status.");
+        }
+    }, []);
+
+    useEffect(() => {
+        const fetchInitialData = async () => {
+            try {
+                const status = await refreshModelStatus();
+                // If model name isn't in cookies, set it from the backend status
+                if (status && !getCookie(COOKIE_MODEL_NAME)) {
+                    setModelName(status.loaded_model);
+                }
+    
+                const lorasData = await getAvailableLoras();
+                setAvailableLoras(lorasData.loras);
+            } catch (err) {
+                console.error("Failed to fetch initial model data:", err);
+                setError(err instanceof Error ? err.message : "Could not connect to the backend to get model status.");
+            }
+        };
+        fetchInitialData();
+    }, [refreshModelStatus]);
 
     // When generating multiple images, the seed must be random.
     useEffect(() => {
@@ -256,8 +307,13 @@ const App: React.FC = () => {
                                     setPrompt={setPrompt}
                                     negativePrompt={negativePrompt}
                                     setNegativePrompt={setNegativePrompt}
+                                    modelName={modelName}
+                                    setModelName={setModelName}
                                     loraModels={loraModels}
                                     setLoraModels={setLoraModels}
+                                    modelStatus={modelStatus}
+                                    availableLoras={availableLoras}
+                                    refreshModelStatus={refreshModelStatus}
                                     width={width}
                                     setWidth={setWidth}
                                     height={height}

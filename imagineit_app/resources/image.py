@@ -10,17 +10,6 @@ from imagineit_app.imdb import read_img_v2
 
 router = APIRouter()
 
-class InferencePayload(BaseModel):
-    prompt: str
-    negative_prompt: str
-    width: int
-    height: int
-    num_inference_steps: int
-    guidance_scale: float
-    seed: int
-    batch_size: int
-    inference_size: int
-
 @router.get("/v1/images/{identity_hash}")
 def get_image(identity_hash: str, compression_level: int):
     try:
@@ -38,11 +27,21 @@ def get_image(identity_hash: str, compression_level: int):
     small_image.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")
 
-@router.get("/v1/images/inference")
+class InferencePayload(BaseModel):
+    prompt: str
+    negative_prompt: str
+    width: int
+    height: int
+    num_inference_steps: int
+    guidance_scale: float
+    seed: int
+    batch_size: int
+    inference_size: int
+
+@router.post("/v1/images/inference")
 def imagine(payload: InferencePayload):
-    from imagineit_app.inference import MODEL
     image_hashes = []
-    for _ in range(inference_size):
+    for _ in range(payload.inference_size):
         image_bytes, seeds = img_inference(
             prompt=prompt,
             negative_prompt=negative_prompt,

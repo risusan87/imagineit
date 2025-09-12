@@ -1,0 +1,370 @@
+
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { 
+    DEFAULT_STEPS, DEFAULT_GUIDANCE, DEFAULT_WIDTH, DEFAULT_HEIGHT,
+    COOKIE_PROMPT, COOKIE_NEGATIVE_PROMPT, COOKIE_WIDTH, COOKIE_HEIGHT,
+    COOKIE_SEED, COOKIE_STEPS, COOKIE_GUIDANCE_SCALE, COOKIE_BATCH_SIZE,
+    COOKIE_INFERENCE_COUNT, COOKIE_ACTIVE_TAB, COOKIE_EXPIRATION_DAYS,
+    COOKIE_ALWAYS_RANDOM_SEED, COOKIE_BACKEND_MODE, COOKIE_DEDICATED_DOMAIN,
+    COOKIE_LORA_MODEL, COOKIE_MODEL_NAME
+} from './constants';
+import { generateImagesStream, fetchImageById, getModelStatus, getAvailableLoras } from './services/geminiService';
+import Header from './components/Header';
+import ImageControls from './components/ImageControls';
+import ImageDisplay from './components/ImageDisplay';
+import Tabs, { Tab } from './components/Tabs';
+import LabelingView from './components/LabelingView';
+import TrainView from './components/TrainView';
+import { getCookie, setCookie } from './utils/cookies';
+import ExportView from './components/ExportView';
+import { LoraModelConfig, ImageGeneration } from './types';
+
+// Helper to get a number from a cookie or return a default value.
+const getNumberFromCookie = (cookieName: string, defaultValue: number): number => {
+    const cookieValue = getCookie(cookieName);
+    if (cookieValue !== null) {
+        const num = parseFloat(cookieValue);
+        if (!isNaN(num)) {
+            return num;
+        }
+    }
+    return defaultValue;
+};
+
+// Helper for states that can be a number or an empty string.
+const getNumberOrEmptyFromCookie = (cookieName: string, defaultValue: number): number | '' => {
+    const cookieValue = getCookie(cookieName);
+    if (cookieValue === null) {
+        return defaultValue;
+    }
+    if (cookieValue === '') {
+        return '';
+    }
+    const num = parseInt(cookieValue, 10);
+    return isNaN(num) ? defaultValue : num;
+};
+
+const App: React.FC = () => {
+    // State for Inference Tab, initialized from cookies with fallbacks.
+    const [prompt, setPrompt] = useState<string>(() => getCookie(COOKIE_PROMPT) || '');
+    const [negativePrompt, setNegativePrompt] = useState<string>(() => getCookie(COOKIE_NEGATIVE_PROMPT) || '');
+    const [modelName, setModelName] = useState<string>(() => getCookie(COOKIE_MODEL_NAME) || 'sd_xl_base_1.0.safetensors');
+    const [loraModels, setLoraModels] = useState<LoraModelConfig[]>(() => {
+        const cookieValue = getCookie(COOKIE_LORA_MODEL);
+        if (cookieValue) {
+            try {
+                const parsed = JSON.parse(cookieValue);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    // Basic validation to ensure it's in the expected format
+                    if (typeof parsed[0].model === 'string' && typeof parsed[0].weight === 'string') {
+                        return parsed;
+                    }
+                }
+            } catch (e) {
+                // If parsing fails, it's likely the old string format.
+                // Migrate it to the new structure.
+                return [{ model: cookieValue, weight: '1.0' }];
+            }
+        }
+        // Default to one empty LoRA entry
+        return [{ model: '', weight: '1.0' }];
+    });
+    const [width, setWidth] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_WIDTH, DEFAULT_WIDTH));
+    const [height, setHeight] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_HEIGHT, DEFAULT_HEIGHT));
+    const [seed, setSeed] = useState<number | null>(() => {
+        const cookieSeed = getCookie(COOKIE_SEED);
+        if (cookieSeed === 'null') return null;
+        if (cookieSeed) {
+            const num = parseInt(cookieSeed, 10);
+            return isNaN(num) ? Math.floor(Math.random() * 2**32) : num;
+        }
+        return Math.floor(Math.random() * 2**32);
+    });
+    const [alwaysRandomSeed, setAlwaysRandomSeed] = useState<boolean>(() => getCookie(COOKIE_ALWAYS_RANDOM_SEED) === 'true');
+    const [steps, setSteps] = useState<number>(() => getNumberFromCookie(COOKIE_STEPS, DEFAULT_STEPS));
+    const [guidanceScale, setGuidanceScale] = useState<number>(() => getNumberFromCookie(COOKIE_GUIDANCE_SCALE, DEFAULT_GUIDANCE));
+    const [batchSize, setBatchSize] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_BATCH_SIZE, 1));
+    const [inferenceCount, setInferenceCount] = useState<number | ''>(() => getNumberOrEmptyFromCookie(COOKIE_INFERENCE_COUNT, 1));
+    
+    const [imageGenerations, setImageGenerations] = useState<ImageGeneration[]>([]);
+    const fetchedHashesRef = useRef(new Set<string>());
+
+    const [generationKey, setGenerationKey] = useState(0);
+    const [isInitiating, setIsInitiating] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // State for backend settings
+    const [backendMode, setBackendMode] = useState<'combined' | 'dedicated'>(() => (getCookie(COOKIE_BACKEND_MODE) as 'combined' | 'dedicated') || 'combined');
+    const [dedicatedDomain, setDedicatedDomain] = useState<string>(() => getCookie(COOKIE_DEDICATED_DOMAIN) || '');
+
+    // State for active tab, also persisted.
+    const [activeTab, setActiveTab] = useState<Tab>(() => (getCookie(COOKIE_ACTIVE_TAB) as Tab) || 'inference');
+
+    // New state for model status and available LoRAs
+    const [modelStatus, setModelStatus] = useState<{ loaded_model: string; loaded_loras: [string, number][]; } | null>(null);
+    const [availableLoras, setAvailableLoras] = useState<string[]>([]);
+
+    // Effects to save state to cookies on change.
+    useEffect(() => { setCookie(COOKIE_PROMPT, prompt, COOKIE_EXPIRATION_DAYS); }, [prompt]);
+    useEffect(() => { setCookie(COOKIE_NEGATIVE_PROMPT, negativePrompt, COOKIE_EXPIRATION_DAYS); }, [negativePrompt]);
+    useEffect(() => { setCookie(COOKIE_MODEL_NAME, modelName, COOKIE_EXPIRATION_DAYS); }, [modelName]);
+    useEffect(() => { setCookie(COOKIE_LORA_MODEL, JSON.stringify(loraModels), COOKIE_EXPIRATION_DAYS); }, [loraModels]);
+    useEffect(() => { setCookie(COOKIE_WIDTH, String(width), COOKIE_EXPIRATION_DAYS); }, [width]);
+    useEffect(() => { setCookie(COOKIE_HEIGHT, String(height), COOKIE_EXPIRATION_DAYS); }, [height]);
+    useEffect(() => { setCookie(COOKIE_SEED, seed, COOKIE_EXPIRATION_DAYS); }, [seed]);
+    useEffect(() => { setCookie(COOKIE_ALWAYS_RANDOM_SEED, String(alwaysRandomSeed), COOKIE_EXPIRATION_DAYS); }, [alwaysRandomSeed]);
+    useEffect(() => { setCookie(COOKIE_STEPS, steps, COOKIE_EXPIRATION_DAYS); }, [steps]);
+    useEffect(() => { setCookie(COOKIE_GUIDANCE_SCALE, guidanceScale, COOKIE_EXPIRATION_DAYS); }, [guidanceScale]);
+    useEffect(() => { setCookie(COOKIE_BATCH_SIZE, String(batchSize), COOKIE_EXPIRATION_DAYS); }, [batchSize]);
+    useEffect(() => { setCookie(COOKIE_INFERENCE_COUNT, String(inferenceCount), COOKIE_EXPIRATION_DAYS); }, [inferenceCount]);
+    useEffect(() => { setCookie(COOKIE_ACTIVE_TAB, activeTab, COOKIE_EXPIRATION_DAYS); }, [activeTab]);
+    useEffect(() => { setCookie(COOKIE_BACKEND_MODE, backendMode, COOKIE_EXPIRATION_DAYS); }, [backendMode]);
+    useEffect(() => { setCookie(COOKIE_DEDICATED_DOMAIN, dedicatedDomain, COOKIE_EXPIRATION_DAYS); }, [dedicatedDomain]);
+
+
+    // Fetch model status and available LoRAs on mount
+    const refreshModelStatus = useCallback(async (): Promise<void> => {
+        try {
+            const status = await getModelStatus();
+            setModelStatus(status);
+            // FIX: also sync LoRA models to UI state
+            if (status) {
+                if (status.loaded_loras && status.loaded_loras.length > 0) {
+                    const loadedLoras = status.loaded_loras.map(([name, weight]) => ({
+                        model: name,
+                        weight: String(weight),
+                    }));
+                    setLoraModels(loadedLoras);
+                } else {
+                    setLoraModels([{ model: '', weight: '1.0' }]);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to refresh model status:", error);
+            setError(error instanceof Error ? error.message : "Failed to refresh model status.");
+        }
+    }, []);
+
+    useEffect(() => {
+        const fetchInitialData = async () => {
+            try {
+                const status = await getModelStatus();
+                setModelStatus(status);
+                
+                if (status) {
+                    // If model name isn't in cookies, set it from the backend status
+                    if (!getCookie(COOKIE_MODEL_NAME)) {
+                        setModelName(status.loaded_model);
+                    }
+
+                    // Sync LoRA models UI with backend state
+                    if (status.loaded_loras && status.loaded_loras.length > 0) {
+                        const loadedLoras = status.loaded_loras.map(([name, weight]) => ({
+                            model: name,
+                            weight: String(weight),
+                        }));
+                        setLoraModels(loadedLoras);
+                    } else {
+                        // If backend has no LoRAs, ensure UI has a single empty entry
+                        setLoraModels([{ model: '', weight: '1.0' }]);
+                    }
+                }
+    
+                const lorasData = await getAvailableLoras();
+                setAvailableLoras(lorasData.loras);
+            } catch (err) {
+                console.error("Failed to fetch initial model data:", err);
+                setError(err instanceof Error ? err.message : "Could not connect to the backend to get model status.");
+            }
+        };
+        fetchInitialData();
+    }, []);
+
+    // When generating multiple images, the seed must be random.
+    useEffect(() => {
+        const numericBatchSize = batchSize === '' ? 1 : Number(batchSize);
+        const numericInferenceCount = inferenceCount === '' ? 1 : Number(inferenceCount);
+
+        if (numericBatchSize > 1 || numericInferenceCount > 1) {
+            if (seed !== null) {
+                setSeed(null);
+            }
+        }
+    }, [batchSize, inferenceCount, seed]);
+    
+    const isBatchInProgress = imageGenerations.length > 0 && imageGenerations.some(g => g.status === 'queued' || g.status === 'generating');
+
+    const handleUpdateGeneration = useCallback((index: number, dataToUpdate: Partial<ImageGeneration>) => {
+        setImageGenerations(currentGenerations => {
+            if (index < 0 || index >= currentGenerations.length) {
+                return currentGenerations;
+            }
+            const newGenerations = [...currentGenerations];
+            newGenerations[index] = { ...newGenerations[index], ...dataToUpdate };
+            return newGenerations;
+        });
+    }, []);
+
+    const handleGenerate = useCallback(async () => {
+        if (isInitiating || isBatchInProgress) return;
+
+        setIsInitiating(true);
+        setError(null);
+
+        const totalImages = (batchSize || 1) * (inferenceCount || 1);
+        const initialGenerations: ImageGeneration[] = Array.from({ length: totalImages }, (_, i) => ({
+            id: Date.now() + i, // Unique key for React
+            imageUrl: null,
+            status: 'queued',
+        }));
+        setImageGenerations(initialGenerations);
+        setGenerationKey(key => key + 1);
+        fetchedHashesRef.current.clear(); // Reset for new batch
+        setIsInitiating(false);
+
+        const seedForGeneration = alwaysRandomSeed
+            ? Math.floor(Math.random() * 2**32)
+            : seed;
+
+        const handleStreamUpdate = (updates: { index: number; data: Partial<Omit<ImageGeneration, 'id' | 'imageUrl'>> }[]) => {
+            const syncUpdates: { index: number; data: Partial<ImageGeneration> }[] = [];
+            const fetchesToStart: { index: number; hash: string }[] = [];
+        
+            updates.forEach(({ index, data }) => {
+                if (data.status === 'completed' && data.hash) {
+                    const hash = data.hash;
+                    // Check if we've already started fetching this one to prevent race conditions.
+                    if (!fetchedHashesRef.current.has(hash)) {
+                        fetchesToStart.push({ index, hash });
+                        // Queue a state update to show the user we are fetching.
+                        syncUpdates.push({ index, data: { ...data, status: 'completed', progressText: 'Fetching final image...' } });
+                    }
+                } else {
+                    // It's a regular progress update.
+                    syncUpdates.push({ index, data });
+                }
+            });
+        
+            // Batch all synchronous state changes (like progress updates) into one render.
+            if (syncUpdates.length > 0) {
+                setImageGenerations(currentGenerations => {
+                    const newGenerations = [...currentGenerations];
+                    syncUpdates.forEach(({ index, data }) => {
+                        // Bounds check to prevent state corruption
+                        if (index >= 0 && index < newGenerations.length) {
+                            newGenerations[index] = { ...newGenerations[index], ...data };
+                        }
+                    });
+                    return newGenerations;
+                });
+            }
+        
+            // After queuing state updates, start the asynchronous fetches.
+            fetchesToStart.forEach(({ index, hash }) => {
+                // Mark as fetching immediately to prevent duplicate requests from subsequent stream events.
+                fetchedHashesRef.current.add(hash); 
+        
+                fetchImageById(hash, 0)
+                    .then(imageUrl => {
+                        // On success, update the specific image with the final URL.
+                        handleUpdateGeneration(index, { status: 'completed', imageUrl, progressText: 'Completed' });
+                    })
+                    .catch(err => {
+                        console.error(`Failed to fetch image for hash ${hash}:`, err);
+                        handleUpdateGeneration(index, { status: 'failed', progressText: 'Failed to retrieve final image.' });
+                    });
+            });
+        };
+        
+        const handleStreamError = (streamError: Error) => {
+            setError(streamError.message);
+            setImageGenerations(current => current.map(gen => 
+                (gen.status === 'queued' || gen.status === 'generating') 
+                ? { ...gen, status: 'failed', progressText: 'Connection error' }
+                : gen
+            ));
+        };
+
+        await generateImagesStream(
+            prompt,
+            negativePrompt,
+            width || DEFAULT_WIDTH,
+            height || DEFAULT_HEIGHT,
+            steps,
+            guidanceScale,
+            seedForGeneration,
+            batchSize || 1,
+            inferenceCount || 1,
+            handleStreamUpdate,
+            handleStreamError
+        );
+
+    }, [isInitiating, isBatchInProgress, prompt, negativePrompt, width, height, steps, guidanceScale, seed, batchSize, inferenceCount, alwaysRandomSeed, handleUpdateGeneration]);
+
+    return (
+        <div className="min-h-screen bg-gray-900 text-gray-100 font-sans flex flex-col items-center p-4 sm:p-6 lg:p-8">
+            <Header 
+                backendMode={backendMode}
+                setBackendMode={setBackendMode}
+                dedicatedDomain={dedicatedDomain}
+                setDedicatedDomain={setDedicatedDomain}
+            />
+            <main className="w-full max-w-6xl mt-8">
+                <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                <div className="mt-6">
+                    {activeTab === 'inference' && (
+                        <div className="flex flex-col lg:flex-row gap-8">
+                            <div className="w-full lg:w-1/3 lg:max-w-sm">
+                                <ImageControls
+                                    prompt={prompt}
+                                    setPrompt={setPrompt}
+                                    negativePrompt={negativePrompt}
+                                    setNegativePrompt={setNegativePrompt}
+                                    modelName={modelName}
+                                    setModelName={setModelName}
+                                    loraModels={loraModels}
+                                    setLoraModels={setLoraModels}
+                                    modelStatus={modelStatus}
+                                    availableLoras={availableLoras}
+                                    refreshModelStatus={refreshModelStatus}
+                                    width={width}
+                                    setWidth={setWidth}
+                                    height={height}
+                                    setHeight={setHeight}
+                                    seed={seed}
+                                    setSeed={setSeed}
+                                    alwaysRandomSeed={alwaysRandomSeed}
+                                    setAlwaysRandomSeed={setAlwaysRandomSeed}
+                                    steps={steps}
+                                    setSteps={setSteps}
+                                    guidanceScale={guidanceScale}
+                                    setGuidanceScale={setGuidanceScale}
+                                    batchSize={batchSize}
+                                    setBatchSize={setBatchSize}
+                                    inferenceCount={inferenceCount}
+                                    setInferenceCount={setInferenceCount}
+                                    isLoading={isInitiating || isBatchInProgress}
+                                    onGenerate={handleGenerate}
+                                />
+                            </div>
+                            <div className="w-full lg:w-2/3 flex-1">
+                                <ImageDisplay
+                                    key={generationKey}
+                                    imageGenerations={imageGenerations}
+                                    isBatchInProgress={isBatchInProgress}
+                                    error={error}
+                                    prompt={prompt}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {activeTab === 'label' && <LabelingView />}
+                    {activeTab === 'train' && <TrainView />}
+                    {activeTab === 'export' && <ExportView />}
+                </div>
+            </main>
+        </div>
+    );
+};
+
+export default App;

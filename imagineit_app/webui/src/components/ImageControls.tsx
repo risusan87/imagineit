@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { 
     MIN_STEPS, MAX_STEPS, 
@@ -6,7 +7,7 @@ import {
     DEFAULT_WIDTH, DEFAULT_HEIGHT, DIMENSION_STEP,
     PREDEFINED_ASPECT_RATIOS
 } from '../constants';
-import { mountLora } from '../services/geminiService';
+import { reloadModelWithLoras } from '../services/geminiService';
 import { LoraModelConfig } from '../types';
 
 interface ImageControlsProps {
@@ -14,8 +15,14 @@ interface ImageControlsProps {
     setPrompt: (prompt: string) => void;
     negativePrompt: string;
     setNegativePrompt: (prompt: string) => void;
+    modelName: string;
+    setModelName: (name: string) => void;
     loraModels: LoraModelConfig[];
     setLoraModels: (loras: LoraModelConfig[]) => void;
+    modelStatus: { loaded_model: string; loaded_loras: [string, number][]; } | null;
+    availableLoras: string[];
+    // FIX: Changed Promise<void> to Promise<any> to allow for a return value.
+    refreshModelStatus: () => Promise<any>;
     width: number | '';
     setWidth: (width: number | '') => void;
     height: number | '';
@@ -74,7 +81,9 @@ const AspectRatioVisualizer: React.FC<{ width: number | ''; height: number | '' 
 const ImageControls: React.FC<ImageControlsProps> = ({ 
     prompt, setPrompt, 
     negativePrompt, setNegativePrompt,
+    modelName, setModelName,
     loraModels, setLoraModels,
+    modelStatus, availableLoras, refreshModelStatus,
     width, setWidth,
     height, setHeight,
     seed, setSeed, 
@@ -90,6 +99,39 @@ const ImageControls: React.FC<ImageControlsProps> = ({
     const [loraError, setLoraError] = useState<string | null>(null);
 
     const isMultiImage = Number(batchSize) > 1 || Number(inferenceCount) > 1;
+
+    const isModelConfigChanged = useMemo(() => {
+        if (!modelStatus) {
+            return true;
+        }
+        if (modelName.trim() !== modelStatus.loaded_model) {
+            return true;
+        }
+        const activeUiLoras = loraModels
+            .filter(l => l.model.trim() !== '')
+            .map(l => ({ name: l.model.trim(), weight: parseFloat(l.weight) || 1.0 }));
+        const loadedLoras = modelStatus.loaded_loras.map(([name, weight]) => ({ name, weight }));
+        if (activeUiLoras.length !== loadedLoras.length) {
+            return true;
+        }
+        const sortedUiLoras = [...activeUiLoras].sort((a, b) => a.name.localeCompare(b.name));
+        const sortedLoadedLoras = [...loadedLoras].sort((a, b) => a.name.localeCompare(b.name));
+        for (let i = 0; i < sortedUiLoras.length; i++) {
+            if (sortedUiLoras[i].name !== sortedLoadedLoras[i].name ||
+                Math.abs(sortedUiLoras[i].weight - sortedLoadedLoras[i].weight) > 0.001) {
+                return true;
+            }
+        }
+        return false;
+    }, [modelName, loraModels, modelStatus]);
+
+    const areWeightsValid = useMemo(() => {
+        return loraModels.every(l => {
+            if (l.weight.trim() === '') return true; // Empty is fine, will default to 1.0
+            const num = parseFloat(l.weight);
+            return !isNaN(num) && num >= 0.0 && num <= 1.0;
+        });
+    }, [loraModels]);
 
     const handleRandomSeed = () => {
         const randomSeed = Math.floor(Math.random() * 2**32);
@@ -167,34 +209,25 @@ const ImageControls: React.FC<ImageControlsProps> = ({
     };
 
     const handleAddLora = () => {
-        setLoraModels([...loraModels, { model: '', weight: '' }]);
+        setLoraModels([...loraModels, { model: '', weight: '1.0' }]);
     };
 
     const handleRemoveLora = (index: number) => {
         if (loraModels.length > 1) {
             setLoraModels(loraModels.filter((_, i) => i !== index));
         } else {
-            // If it's the last one, just clear its values
-            setLoraModels([{ model: '', weight: '' }]);
+            // If it's the last one, just clear its values to default
+            setLoraModels([{ model: '', weight: '1.0' }]);
         }
     };
 
-    const { totalWeight, hasWeights, areWeightsValid } = useMemo(() => {
-        const activeLoras = loraModels.filter(l => l.model.trim() !== '');
-        const hasWeights = activeLoras.some(l => l.weight.trim() !== '');
-        const totalWeight = activeLoras.reduce((sum, lora) => sum + (parseFloat(lora.weight) || 0), 0);
-        // Weights are valid if none are specified, or if they are specified and sum to 1.
-        const areWeightsValid = !hasWeights || Math.abs(totalWeight - 1.0) < 0.001;
-        return { totalWeight, hasWeights, areWeightsValid };
-    }, [loraModels]);
-
-    const handleLoadLora = async () => {
+    const handleReloadModel = async () => {
         const modelsToLoad = loraModels.filter(l => l.model.trim() !== '');
-        if (modelsToLoad.length === 0 || loraLoadState === 'loading') return;
+        if (loraLoadState === 'loading' || !modelName.trim()) return;
 
         if (!areWeightsValid) {
             setLoraLoadState('error');
-            setLoraError('Adapter weights must sum to 1.0.');
+            setLoraError('Adapter weights must be between 0.0 and 1.0.');
             return;
         }
 
@@ -202,8 +235,9 @@ const ImageControls: React.FC<ImageControlsProps> = ({
         setLoraError(null);
 
         try {
-            await mountLora(modelsToLoad);
+            await reloadModelWithLoras(modelName, modelsToLoad);
             setLoraLoadState('success');
+            await refreshModelStatus();
             setTimeout(() => setLoraLoadState('idle'), 3000); // Reset after 3s
         } catch (err) {
             setLoraLoadState('error');
@@ -215,8 +249,7 @@ const ImageControls: React.FC<ImageControlsProps> = ({
         }
     };
 
-    const canLoadLora = loraModels.some(l => l.model.trim() !== '') && loraLoadState !== 'loading';
-
+    const canReloadModel = isModelConfigChanged && loraLoadState !== 'loading' && modelName.trim() !== '';
 
     return (
         <div className="bg-gray-800/50 p-6 rounded-2xl shadow-lg flex flex-col h-full sticky top-8">
@@ -250,69 +283,84 @@ const ImageControls: React.FC<ImageControlsProps> = ({
                     />
                 </div>
 
-                <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                        LoRA Models <span className="text-gray-400">(optional)</span>
-                    </label>
-                    <div className="space-y-3">
-                        {loraModels.map((lora, index) => (
-                             <div key={index} className="flex items-center gap-2">
-                                <input
-                                    type="text"
-                                    className="flex-grow w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
-                                    value={lora.model}
-                                    onChange={(e) => handleLoraChange(index, 'model', e.target.value)}
-                                    placeholder={`LoRA Model ${index + 1}`}
-                                    disabled={isLoading}
-                                    aria-label={`LoRA Model ${index + 1} name`}
-                                />
-                                <input
-                                    type="text" // Use text to allow partial input like "0."
-                                    className="w-24 bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield]"
-                                    value={lora.weight}
-                                    onChange={(e) => handleLoraChange(index, 'weight', e.target.value)}
-                                    placeholder="Weight"
-                                    disabled={isLoading}
-                                    aria-label={`LoRA Model ${index + 1} weight`}
-                                />
-                                <button
-                                    onClick={() => handleRemoveLora(index)}
-                                    disabled={isLoading}
-                                    className="p-3 bg-gray-700 hover:bg-red-800/50 rounded-lg transition-colors disabled:opacity-50 text-gray-400 hover:text-red-400"
-                                    aria-label={`Remove LoRA Model ${index + 1}`}
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
-                                    </svg>
-                                </button>
-                            </div>
-                        ))}
+                <div className="space-y-4">
+                    <div>
+                        <label htmlFor="model-name" className="block text-sm font-medium text-gray-300 mb-2">
+                            Base Model
+                        </label>
+                        <input
+                            id="model-name"
+                            type="text"
+                            className="w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
+                            value={modelName}
+                            onChange={(e) => setModelName(e.target.value)}
+                            placeholder="e.g., sd_xl_base_1.0.safetensors"
+                            disabled={isLoading || loraLoadState === 'loading'}
+                        />
                     </div>
-                     <button
-                        onClick={handleAddLora}
-                        disabled={isLoading}
-                        className="w-full mt-3 text-sm text-purple-400 hover:text-purple-300 font-semibold py-2 px-4 rounded-lg border-2 border-dashed border-gray-600 hover:border-purple-500 transition-colors disabled:opacity-50"
-                    >
-                        + Add another LoRA
-                    </button>
-                    <div className="flex items-center justify-between mt-3">
-                         <button
-                            onClick={handleLoadLora}
-                            disabled={isLoading || !canLoadLora}
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex-shrink-0"
-                            aria-label="Load LoRA models"
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            LoRA Models
+                        </label>
+                        <div className="space-y-3">
+                            {loraModels.map((lora, index) => (
+                                 <div key={index} className="flex items-center gap-2">
+                                    <select
+                                        className="flex-grow w-full bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50"
+                                        value={lora.model}
+                                        onChange={(e) => handleLoraChange(index, 'model', e.target.value)}
+                                        disabled={isLoading || loraLoadState === 'loading'}
+                                        aria-label={`LoRA Model ${index + 1} name`}
+                                    >
+                                        <option value="">-- Select LoRA --</option>
+                                        {availableLoras.map(loraName => (
+                                            <option key={loraName} value={loraName}>{loraName}</option>
+                                        ))}
+                                    </select>
+                                    <input
+                                        type="text" // Use text to allow partial input like "0."
+                                        className="w-24 bg-gray-700 border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200 disabled:opacity-50 [appearance:textfield]"
+                                        value={lora.weight}
+                                        onChange={(e) => handleLoraChange(index, 'weight', e.target.value)}
+                                        placeholder="Weight"
+                                        disabled={isLoading || loraLoadState === 'loading'}
+                                        aria-label={`LoRA Model ${index + 1} weight`}
+                                    />
+                                    <button
+                                        onClick={() => handleRemoveLora(index)}
+                                        disabled={isLoading || loraLoadState === 'loading'}
+                                        className="p-3 bg-gray-700 hover:bg-red-800/50 rounded-lg transition-colors disabled:opacity-50 text-gray-400 hover:text-red-400"
+                                        aria-label={`Remove LoRA Model ${index + 1}`}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            onClick={handleAddLora}
+                            disabled={isLoading || loraLoadState === 'loading'}
+                            className="w-full mt-3 text-sm text-purple-400 hover:text-purple-300 font-semibold py-2 px-4 rounded-lg border-2 border-dashed border-gray-600 hover:border-purple-500 transition-colors disabled:opacity-50"
                         >
-                           {loraLoadState === 'loading' ? 'Loading...' : 'Load Models'}
+                            + Add another LoRA
                         </button>
-                        {hasWeights && (
-                            <p className={`text-xs font-mono transition-colors ${areWeightsValid ? 'text-gray-400' : 'text-red-400'}`}>
-                                Sum: {totalWeight.toFixed(2)} / 1.0
-                            </p>
-                        )}
-                    </div>
-                     <div className="text-xs mt-2 h-4">
-                        {loraLoadState === 'success' && <p className="text-green-400">LoRA models loaded successfully!</p>}
-                        {loraLoadState === 'error' && <p className="text-red-400">{loraError}</p>}
+                        <div className="flex items-center justify-between mt-3">
+                             <button
+                                onClick={handleReloadModel}
+                                disabled={isLoading || !canReloadModel}
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex-shrink-0"
+                                aria-label="Reload model with selected LoRAs"
+                            >
+                               {loraLoadState === 'loading' ? 'Loading...' : 'Load Models'}
+                            </button>
+                        </div>
+                         <div className="text-xs mt-2 h-4">
+                            {loraLoadState === 'success' && <p className="text-green-400">Model reloaded successfully!</p>}
+                            {loraLoadState === 'error' && <p className="text-red-400">{loraError}</p>}
+                            {!areWeightsValid && loraLoadState !== 'error' && <p className="text-red-400">Weights must be between 0.0 and 1.0.</p>}
+                        </div>
                     </div>
                 </div>
 

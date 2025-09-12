@@ -10,12 +10,19 @@ requires-python = ">=3.8"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
+    "python-dotenv",
+    "pandas",
+]
+
+[project.optional-dependencies]
+gpu = [
     "diffusers",
     "transformers",
     "torch",
-    "pyngrok",
-    "python-dotenv",
-    "pandas",
+    "controlnet_aux",
+]
+beam = [
+    "beam-client",
 ]
 
 [project.scripts]

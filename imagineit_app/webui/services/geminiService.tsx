@@ -352,34 +352,79 @@ export const deleteImage = async (hash: string): Promise<void> => {
 };
 
 /**
- * Mounts one or more LoRA models on the backend via a POST request.
+ * Fetches the currently loaded model and LoRAs.
+ * @returns A promise that resolves to the model status object.
+ */
+export const getModelStatus = async (): Promise<{ loaded_model: string; loaded_loras: [string, number][] }> => {
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/model/status`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch model status with status ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error("Fetch model status failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        throw error;
+    }
+};
+
+/**
+ * Fetches the list of available LoRA models.
+ * @returns A promise that resolves to an object containing the list of LoRA names.
+ */
+export const getAvailableLoras = async (): Promise<{ loras: string[] }> => {
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/api/v1/model/loras`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch available LoRAs with status ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error("Fetch available LoRAs failed:", error);
+        if (error instanceof TypeError) {
+             throw new Error(`Backend communication failed. Is the server running?`);
+        }
+        throw error;
+    }
+};
+
+/**
+ * Reloads the base model with a new set of LoRAs.
+ * @param modelName The name of the base model to load.
  * @param lorasConfig An array of LoRA model configurations.
  * @returns A promise that resolves to an object with a success status.
  */
-export const mountLora = async (lorasConfig: LoraModelConfig[]): Promise<{ status: string }> => {
+export const reloadModelWithLoras = async (modelName: string, lorasConfig: LoraModelConfig[]): Promise<{ status: string }> => {
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/api/v1/lora-mount`;
+    const url = `${baseUrl}/api/v1/model/reloading`;
 
-    const modelsToLoad = lorasConfig.filter(l => l.model.trim() !== '');
-    if (modelsToLoad.length === 0) {
-        throw new Error("No LoRA models specified to load.");
+    if (!modelName.trim()) {
+        throw new Error("Base model name cannot be empty.");
     }
 
-    const hasWeights = modelsToLoad.some(l => l.weight.trim() !== '');
-
-    const loras = modelsToLoad.map(l => l.model.trim());
-    const payload: { loras: string[]; adapter_weights?: number[] } = { loras };
-
-    if (hasWeights) {
-        payload.adapter_weights = modelsToLoad.map(l => {
+    const loras = lorasConfig
+        .filter(l => l.model.trim() !== '')
+        .map(l => {
             const weight = parseFloat(l.weight);
-            return isNaN(weight) ? 0 : weight; // Convert to number (float)
+            // Default to 1.0 if weight is invalid or empty
+            return [l.model.trim(), isNaN(weight) ? 1.0 : weight] as [string, number];
         });
-    }
+
+    const payload = {
+        model_name: modelName.trim(),
+        loras: loras
+    };
 
     try {
         const response = await fetch(url, {
-            method: 'POST', // Use POST to send a structured JSON body
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
@@ -390,7 +435,7 @@ export const mountLora = async (lorasConfig: LoraModelConfig[]): Promise<{ statu
             let errorMessage = `API request failed with status ${response.status}`;
             try {
                 const errorData = await response.json();
-                errorMessage = errorData.error || errorMessage;
+                errorMessage = errorData.error || errorData.detail || errorMessage;
             } catch (e) {
                 // Ignore if response is not JSON
             }
@@ -400,14 +445,14 @@ export const mountLora = async (lorasConfig: LoraModelConfig[]): Promise<{ statu
         return await response.json();
 
     } catch (error) {
-        console.error("Mount LoRA failed:", error);
+        console.error("Reload model with LoRAs failed:", error);
         if (error instanceof TypeError) {
              throw new Error(`Backend communication failed. Is the server running?`);
         }
         if (error instanceof Error) {
             throw error;
         }
-        throw new Error("An unknown error occurred while mounting the LoRA model.");
+        throw new Error("An unknown error occurred while reloading the model.");
     }
 };
 

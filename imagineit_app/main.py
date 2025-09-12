@@ -6,6 +6,8 @@ import subprocess
 import sys
 import time
 
+import dotenv
+
 def zrok_enable(token: str):
     subprocess.run(["zrok", "enable", token])
 
@@ -28,7 +30,7 @@ def main():
     # --- Configuration ---
     CADDY_PORT = 8795
     BACKEND_PORT = 8000
-    FRONTEND_DIR = "imagineit_app/static" # The directory of your Vite app
+    FRONTEND_DIR = "imagineit_app/webui" # The directory of your Vite app
 
     # --- Get ngrok token from environment ---
     # NGROK_TOKEN = os.environ.get('NGROK_AUTHTOKEN')
@@ -38,7 +40,7 @@ def main():
     # ngrok.set_auth_token(NGROK_TOKEN)
 
     # --- Get zrok token from environment ---
-    ZROK_TOKEN = os.environ.get('ZROK_AUTHTOKEN')
+    ZROK_TOKEN = dotenv.get_key('.env', 'ZROK_AUTHTOKEN')
     if not ZROK_TOKEN:
         print("❌ Error: ZROK_AUTHTOKEN not found in environment.")
         sys.exit(1)
