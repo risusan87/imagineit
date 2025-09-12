@@ -472,6 +472,3 @@ def img_metadata_v2(seed: int, prompt: str, negative_prompt: str, width: int, he
 # for h in hashes:
 #     img = read_img_v2(h)
 #     print(img is not None)
-
-indx = select_idx_v2([0, 1, 2])
-export_v2("test_export", indx)
