@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn[standard]",
     "python-dotenv",
     "pandas",
+    "Pillow",
 ]
 
 [project.optional-dependencies]
