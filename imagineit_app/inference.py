@@ -128,4 +128,9 @@ class SDXLInferenceHelper:
         worker.start()
         return reference
 
-MODEL = SDXLInferenceHelper()
+
+
+if LOCAL:
+    MODEL = SDXLInferenceHelper()
+else:
+    MODEL = None
