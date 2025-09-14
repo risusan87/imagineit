@@ -14,7 +14,7 @@ image = (
 with image.imports():
     from diffusers import StableDiffusionXLPipeline
     import torch
-volume = modal.Volume.from_name("sdxl")
+volume = modal.Volume.from_name("sdxl", create_if_missing=True)
 app = modal.App("imagineit", image=image)
 dictionary = modal.Dict.from_name("imagineit_dict", create_if_missing=True)
 
