@@ -93,7 +93,15 @@ class SymmetricCipherHelper:
         self.key = key
 
     def encrypt(self, plaintext: bytes) -> bytes:
-        """Encrypt plaintext using AES-GCM and prepend the nonce."""
+        """
+        Encrypt plaintext using AES-GCM and prepend the nonce.
+
+        args:
+            - plaintext (bytes): The plaintext data to encrypt.
+
+        returns:
+            - ciphertext (bytes): The nonce concatenated with the AES-GCM encrypted ciphertext.
+        """
         import os
 
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
