@@ -4,13 +4,17 @@ import modal
 image = (
     modal.Image.debian_slim()
     .uv_pip_install([
-        "diffusers[torch]",
-        "transformers",
-        "torch>2.0",
-        "accelerate",
-        "cryptography",
-        "peft",
+        "diffusers[torch]==0.35.1",
+        "transformers==4.56.1",
+        "torch==2.8.0",
+        "accelerate==1.10.1",
+        "cryptography==45.0.7",
+        "peft==0.17.1",
     ])
+    .add_local_file(
+        "imagineit_app/encryption.py",
+        remote_path="/root/encryption.py",
+    )
 )
 with image.imports():
     from diffusers import StableDiffusionXLPipeline
@@ -44,33 +48,6 @@ def get_models():
     contents = os.listdir("/sdxl")
     return [model_name.split(".safetensors")[0] for model_name in contents if model_name.endswith(".safetensors")]
 
-class SymmetricCipherHelper:
-    def __init__(self, key: bytes):
-        if len(key) not in [16, 24, 32]:
-            raise ValueError("Invalid key size.")
-        self.key = key
-
-    def encrypt(self, plaintext: bytes) -> bytes:
-        import os
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        nonce = os.urandom(12)
-        aesgcm = AESGCM(self.key)
-        ciphertext = aesgcm.encrypt(nonce, plaintext, None)
-        return nonce + ciphertext
-
-    def decrypt(self, encrypted_payload: bytes) -> bytes:
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        if len(encrypted_payload) < 12:
-            raise ValueError("Malformed payload.")
-        nonce = encrypted_payload[:12]
-        ciphertext = encrypted_payload[12:]
-        aesgcm = AESGCM(self.key)
-        try:
-            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-            return plaintext
-        except Exception as e:
-            raise e
-
 @app.cls(
     gpu="L40S", 
     image=image,
@@ -86,11 +63,10 @@ class DiffusionModel:
     def setup(self):
         import os
         import json
-        from cryptography.hazmat.primitives.asymmetric import rsa
-        from cryptography.hazmat.primitives import serialization
+        from encryption import P2PEncryption
 
         self.pipe = StableDiffusionXLPipeline.from_single_file(
-            f'/sdxl/{self.model_name}.safetensors',
+            f"/sdxl/{self.model_name}.safetensors",
             torch_dtype=torch.float16,
         )
         self.pipe.to("cuda")
@@ -102,16 +78,7 @@ class DiffusionModel:
             adapters.append(lora["name"])
             self.pipe.load_lora_weights(f'/sdxl/loras/{lora["name"]}.safetensors', adapter_name=lora["name"])
         self.pipe.set_adapters(adapters, adapter_weights=[lora["weight"] for lora in loras])
-        self.secret = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=4096,
-        )
-        self.pem = self.secret.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-        self.cryptor = None
-        self.varifying_key = None
+        self.cipher = P2PEncryption(is_remote=True)
     
     @modal.method()
     def generate(self, pipe_args: bytes) -> bytes:
@@ -142,52 +109,28 @@ class DiffusionModel:
     
     @modal.method()
     def encryption_request(self):
-        import os
-        if self.cryptor is not None:
-            print("Secured protocol already established. No further action needed.")
-            return None
-        self.varifying_key = os.urandom(32)
-        print(f"Public PEM is {self.pem.decode('utf-8')}")
-        return (self.pem, self.varifying_key)
+        return self.cipher.encryption_request()
 
     @modal.method()
     def encryption_acknowledged(self, shared_secret_encrypted: bytes, varifying_key_encrypted: bytes, session_key_encrypted: bytes, nonce: bytes):
-        from cryptography.hazmat.primitives.asymmetric import padding
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        if self.varifying_key is None:
-            raise Exception("No varifying key created. Call encryption_request first.")
-        if self.cryptor is not None:
-            return True
-        session_key = self.secret.decrypt(
+        return self.cipher.encryption_acknowledged(
+            shared_secret_encrypted,
+            varifying_key_encrypted,
             session_key_encrypted,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
+            nonce
         )
-        aesgcm = AESGCM(session_key)
-        varifying_key = aesgcm.decrypt(nonce, varifying_key_encrypted, None)
-        if varifying_key != self.varifying_key:
-            print("Remote can not varify the varifying key and this should not happen with correct protocol.")
-            return False
-        shared_secret = aesgcm.decrypt(nonce, shared_secret_encrypted, None)
-        self.cryptor = SymmetricCipherHelper(shared_secret)
-        print("Secured protocol established!")
-        return True
 
     def decrypt(self, encrypted_payload: bytes) -> dict:
         import json
-        if self.cryptor is None:
+        if self.cipher.cryptor is None:
             raise Exception("Secured protocol not established")
-        decrypted_data = self.cryptor.decrypt(encrypted_payload).decode('utf-8')
+        decrypted_data = self.cipher.cryptor.decrypt(encrypted_payload).decode("utf-8")
         return json.loads(decrypted_data)
     
     def encrypt(self, raw_payload: dict) -> bytes:
         import json
-        if self.cryptor is None:
+        if self.cipher.cryptor is None:
             raise Exception("Secured protocol not established")
-        raw_data = json.dumps(raw_payload).encode('utf-8')
-        encrypted_data = self.cryptor.encrypt(raw_data)
+        raw_data = json.dumps(raw_payload).encode("utf-8")
+        encrypted_data = self.cipher.cryptor.encrypt(raw_data)
         return encrypted_data
