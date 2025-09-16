@@ -17,7 +17,7 @@ image = (
     )
 )
 with image.imports():
-    from diffusers import StableDiffusionXLPipeline
+    from diffusers import StableDiffusionXLPipeline, StableDiffusionXLImg2ImgPipeline, StableDiffusionUpscalePipeline
     import torch
 volume = modal.Volume.from_name("sdxl", create_if_missing=True)
 app = modal.App("imagineit", image=image)
@@ -28,15 +28,37 @@ dictionary = modal.Dict.from_name("imagineit_dict", create_if_missing=True)
     scaledown_window=2,
     volumes={"/sdxl": volume},
 )
-def download_safetensor(remote_safetensor_location: str, is_lora: bool=False):
+def download_safetensor(remote_safetensor_location: str, location: str=""):
     import os
     import requests
     if not os.path.exists("/sdxl/loras"):
         os.makedirs("/sdxl/loras")
+    if not os.path.exists("/sdxl/refiners"):
+        os.makedirs("/sdxl/refiners")
+    if not os.path.exists("/sdxl/upscalers"):
+        os.makedirs("/sdxl/upscalers")
     name = remote_safetensor_location.split("/")[-1]
     response = requests.get(remote_safetensor_location)
-    with open(f'/sdxl/{"loras/" if is_lora else ""}{name}', 'wb') as f:
+    with open(f'/sdxl/{location}{"/" if location else ""}{name}', 'wb') as f:
         f.write(response.content)
+
+@app.function(
+    image = modal.Image.debian_slim().run_commands("apt-get update && apt-get install -y git-lfs"),
+    scaledown_window=2,
+    volumes={"/sdxl": volume},
+)
+def download_repo(remote_location: str, location: str=""):
+    import os
+    if not os.path.exists("/sdxl/loras"):
+        os.makedirs("/sdxl/loras")
+    if not os.path.exists("/sdxl/refiners"):
+        os.makedirs("/sdxl/refiners")
+    if not os.path.exists("/sdxl/upscalers"):
+        os.makedirs("/sdxl/upscalers")
+    name = remote_location.split("/")[-1]
+    local_location = f"/sdxl/{location}{'/' if location else ''}{name}"
+    os.system(f"git clone {remote_location} {local_location}")
+    os.system(f"cd {local_location} && git lfs pull")
 
 @app.function(
     image = modal.Image.debian_slim(),
@@ -58,13 +80,16 @@ def get_models():
 class DiffusionModel:
     model_name: str = modal.parameter()
     loras: str = modal.parameter(default="[]")
+    refiner: str = modal.parameter(default="{}")
+    upscaler: str = modal.parameter(default="{}")
 
     @modal.enter()
     def setup(self):
         import os
         import json
         from encryption import P2PEncryption
-
+        self.refiner = json.loads(self.refiner)
+        self.upscaler = json.loads(self.upscaler)
         self.pipe = StableDiffusionXLPipeline.from_single_file(
             f"/sdxl/{self.model_name}.safetensors",
             torch_dtype=torch.float16,
@@ -77,7 +102,8 @@ class DiffusionModel:
         for lora in loras:
             adapters.append(lora["name"])
             self.pipe.load_lora_weights(f'/sdxl/loras/{lora["name"]}.safetensors', adapter_name=lora["name"])
-        self.pipe.set_adapters(adapters, adapter_weights=[lora["weight"] for lora in loras])
+        if len(adapters) > 0:
+            self.pipe.set_adapters(adapters, adapter_weights=[lora["weight"] for lora in loras])
         self.cipher = P2PEncryption(is_remote=True)
     
     @modal.method()
@@ -87,14 +113,59 @@ class DiffusionModel:
         when fixed seed is desired, use "seed" with type integer instead of torch.Generator
         returning json contains PNG images encoded as base64 strings
         """
+        import gc
         from io import BytesIO
         import base64
-        pipe_args = self.decrypt(pipe_args)
+        pipe_args: dict = self.decrypt(pipe_args)
         img_iterate = pipe_args.pop("images", 1)
+        if self.refiner != {}:
+            pipe_args["output_type"] = "latent"
+            pipe_args["denoising_end"] = self.refiner["high_noise_frac"]
         images = []
         for _ in range(img_iterate):
-            image = self.pipe(**pipe_args).images
-            images.extend([img for img in image])
+            images_iter = self.pipe(**pipe_args).images
+            images.extend(images_iter)
+        if self.refiner != {}:
+            text_encoder2 = self.pipe.text_encoder_2
+            text_tokenizer2 = self.pipe.tokenizer_2
+            vae = self.pipe.vae
+            scheduler = self.pipe.scheduler
+            self.pipe = None
+            gc.collect()
+            with torch.no_grad():
+                torch.cuda.empty_cache()
+            self.pipe = StableDiffusionXLImg2ImgPipeline.from_single_file(
+                f"/sdxl/refiners/{self.refiner['model_name']}.safetensors",
+                text_encoder_2 = text_encoder2,
+                tokenizer_2 = text_tokenizer2,
+                vae = vae,
+                scheduler = scheduler,
+                torch_dtype = torch.float16,
+            ).to("cuda")
+            images = self.pipe(
+                prompt = pipe_args["prompt"],
+                negative_prompt = pipe_args["negative_prompt"],
+                num_inference_steps = pipe_args["num_inference_steps"],
+                image = images,
+                strength = self.refiner["strength"],
+                denoising_start = self.refiner["high_noise_frac"],
+            ).images
+        if self.upscaler != {}:
+            self.pipe = None
+            gc.collect()
+            with torch.no_grad():
+                torch.cuda.empty_cache()
+            self.pipe = StableDiffusionUpscalePipeline.from_pretrained(
+                f"/sdxl/upscalers/{self.upscaler['model_name']}",
+                torch_dtype = torch.float16,
+            )
+            images = [img.resize((512, 512)) for img in images]
+            self.pipe = self.pipe.to("cuda")
+            images = self.pipe(
+                prompt = pipe_args["prompt"],
+                num_inference_steps=20,
+                image = images,
+            ).images
         print("Done!")
         imgs = []
         for img in images:
@@ -105,7 +176,7 @@ class DiffusionModel:
         img_dict = {"img": imgs}
         img_dict = self.encrypt(img_dict)
         print("Sending...")
-        return img_dict
+        return img_dict 
     
     @modal.method()
     def encryption_request(self):

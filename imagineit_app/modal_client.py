@@ -10,7 +10,22 @@ from imagineit_app.encryption import P2PEncryption
 
 # Contact Modal to get DiffusionModel class on cloud from app imagineit
 DiffusionModel = modal.Cls.from_name("imagineit", "DiffusionModel")
-diffusion = DiffusionModel(model_name="animagine-xl-4.0-opt", loras='[{"name": "pixel-art-xl", "weight": 1.0}]')
+
+# Addons to the model
+loras = [
+    #{"name": "pixel-art-xl", "weight": 0.0},
+]
+refiner = {
+    # "model_name": "sd_xl_refiner_1.0",
+    # "strength": 0.1,
+    # "high_noise_frac": 0.8,
+} # just so you know refiner with animagine-xl-4.0-opt is expected to be less useful, unless you train one specifically for this checkpoint
+upscaler = {
+    "model_name": "stable-diffusion-x4-upscaler",
+}
+
+# Instantiate local and remote cipher objects
+diffusion = DiffusionModel(model_name="animagine-xl-4.0-opt", loras=json.dumps(loras), refiner=json.dumps(refiner), upscaler=json.dumps(upscaler))
 cipher = P2PEncryption(is_remote=False)
 
 # remote -> local: encryption request: 
@@ -33,12 +48,12 @@ if not success:
 
 # dataflow is secured at this point
 diffusion_command_dict = {
-    "prompt": "pixel, 1girl, mococo abyssgard, v tuber, safe, full body, fluffy tails, high school, masterpiece, high score, great score, absurdres",
-    "negative_prompt": "3d render, realistic, lowres, bad anatomy, bad hands, text, error, missing finger, extra digits, fewer digits, cropped, worst quality, low quality, low score, bad score, average score, signature, watermark, username, blurry",
+    "prompt": "1girl, shigure ui, v tuber, safe, full body, lori, looking at viewer, masterpiece, high score, great score, absurdres",
+    "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing finger, extra digits, fewer digits, cropped, worst quality, low quality, low score, bad score, average score, signature, watermark, username, blurry",
     "num_inference_steps": 28,
     "guidance_scale": 5.0,
-    "num_images_per_prompt": 2,
-    "images": 5,
+    "num_images_per_prompt": 1,
+    "images": 1,
 }
 encrypted_args = cipher.cryptor.encrypt(json.dumps(diffusion_command_dict).encode('utf-8'))
 encrypted_images = diffusion.generate.remote(encrypted_args)
