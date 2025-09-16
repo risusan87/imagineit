@@ -143,7 +143,7 @@ class DiffusionModel:
                 torch_dtype = torch.float16,
             ).to("cuda")
             images = self.pipe(
-                prompt = pipe_args["prompt"],
+                prompt = "high resolution, detailed, extensive lighting",
                 negative_prompt = pipe_args["negative_prompt"],
                 num_inference_steps = pipe_args["num_inference_steps"],
                 image = images,

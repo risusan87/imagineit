@@ -16,12 +16,12 @@ loras = [
     #{"name": "pixel-art-xl", "weight": 0.0},
 ]
 refiner = {
-    # "model_name": "sd_xl_refiner_1.0",
-    # "strength": 0.1,
-    # "high_noise_frac": 0.8,
-} # just so you know refiner with animagine-xl-4.0-opt is expected to be less useful, unless you train one specifically for this checkpoint
+    "model_name": "sd_xl_refiner_1.0",
+    "strength": 0.55,
+    "high_noise_frac": 0.7,
+}
 upscaler = {
-    "model_name": "stable-diffusion-x4-upscaler",
+    #"model_name": "stable-diffusion-x4-upscaler",
 }
 
 # Instantiate local and remote cipher objects
